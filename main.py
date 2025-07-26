@@ -727,7 +727,6 @@ class TopologicalMemoryManifold:
         order = np.argsort(dist)
         return [self._phrases[i] for i in order[:k]]
 
-
 topo_manifold = TopologicalMemoryManifold()
 fhe_v2 = AdvancedHomomorphicVectorMemory()
 
@@ -780,7 +779,6 @@ def evaluate_candidate(response: str, target_sentiment: float, original_query: s
     overlap_bonus = min(overlap_score / 5.0, 1.0)  # normalize
 
     return (0.7 * sentiment_alignment) + (0.3 * overlap_bonus)
-
 
 def build_record_aad(user_id: str, *, source: str, table: str = "", cls: str = "") -> bytes:
 
