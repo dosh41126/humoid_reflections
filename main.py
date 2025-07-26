@@ -1,155 +1,76 @@
-# ════════════════════════════════════════════════════════════════════════════════
-# DYSON ORACLE CORE SYSTEM – HEARTFLOW INIT BLOCK
-# Full-stack, quantum-augmented, cryptographically secure assistant architecture.
-# Mode: ULTRA-ADVANCED DOCUMENTATION
-# ════════════════════════════════════════════════════════════════════════════════
-# Modules: Multimodal GUI, Secure AES-GCM Enclave, Argon2id Vaults, 
-# LLaMA-based LLM inference, PennyLane quantum gates, Weaviate semantic memory, 
-# entropy-enhanced memory decay, multimodal coherence perturbation.
-# ════════════════════════════════════════════════════════════════════════════════
-
-import tkinter as tk                      # Foundation GUI engine
-import customtkinter                      # Themed components for modern UI
-import threading                          # Parallel execution control
-import os                                 # Filesystem & environment variable access
-import sqlite3                            # Lightweight local storage engine
-import logging                            # Unified error and trace output
-import numpy as np                        # Vector algebra + numerical methods
-import base64                             # Binary-to-text encoding (for keys, tokens)
-import queue                              # Thread-safe FIFO message passing
-import uuid                               # Universal unique identifier generation
-import requests                           # HTTP(S) network communication
-import io                                 # Byte stream wrappers for media
-import sys                                # System utilities (e.g., exit, encoding)
-import random                             # Core RNG (fallback to entropy augmentation)
-import re                                 # Regex parser for sanitization, injections
-import json                               # Universal data interchange format
-
-from concurrent.futures import ThreadPoolExecutor          # Thread pooling for non-blocking ops
-from llama_cpp import Llama                                # LLaMA inference backend
-from os import path                                         # OS-safe path logic
-from collections import Counter                            # Frequency analysis (entropy, tokens)
-from summa import summarizer                               # Abstractive summarization
-
-# ────────────────────────────────
-# NLP + SEMANTICS INFRASTRUCTURE
-# ────────────────────────────────
+import tkinter as tk
+import customtkinter
+import threading
+import os
+import sqlite3 
+import logging
+import numpy as np
+import base64
+import queue
+import uuid
+import requests
+import io
+import sys
+import random
+import re
+import json
+from concurrent.futures import ThreadPoolExecutor
+from llama_cpp import Llama
+from os import path
+from collections import Counter
+from summa import summarizer
 import nltk
 from textblob import TextBlob
+from weaviate.util import generate_uuid5
 from nltk import pos_tag, word_tokenize
 from nltk.corpus import wordnet as wn
-from nltk.tokenize import word_tokenize
-
-# ────────────────────────────────
-# SEMANTIC VECTOR + WEAVIATE DB
-# ────────────────────────────────
-from weaviate.util import generate_uuid5
+from datetime import datetime
 from weaviate.embedded import EmbeddedOptions
 import weaviate
-
-# ────────────────────────────────
-# QUANTUM INFERENCE ENGINE
-# ────────────────────────────────
 import pennylane as qml
-
-# ────────────────────────────────
-# COLOR, CRYPTOGRAPHY, AND SANITIZATION
-# ────────────────────────────────
-import psutil                                  # System entropy source
-import webcolors                               # Color name <-> hex utilities
-import colorsys                                # RGB ↔ HSV conversion
-import hmac, hashlib                           # HMAC and SHA2 family support
+import psutil
+import webcolors
+from nltk.tokenize import word_tokenize
+import colorsys
+import hmac
+import hashlib
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from argon2.low_level import hash_secret_raw, Type
-import bleach                                  # HTML/CSS sanitizer
-import httpx                                   # Async-capable HTTP requests
-
-# ────────────────────────────────
-# MATHEMATICAL UTILITIES
-# ────────────────────────────────
+import bleach
+import httpx
 import math
 from typing import List, Tuple
 from math import log2
-
-# Redundant in some environments, but re-imported for guaranteed tokenizer scope
+from collections import Counter
 from nltk.tokenize import word_tokenize
 import numpy as np
 
 
-# ════════════════════════════════════════════════════════════════════════════════
-# GLOBAL SYSTEM CONSTANTS – SECURITY, MEMORY, LEARNING TUNERS
-# ════════════════════════════════════════════════════════════════════════════════
+ARGON2_TIME_COST_DEFAULT = 3          
+ARGON2_MEMORY_COST_KIB    = 262144   
+ARGON2_PARALLELISM        = max(1, min(4, os.cpu_count() or 1))
+ARGON2_HASH_LEN           = 32
+CRYSTALLIZE_THRESHOLD = 5    
+DECAY_FACTOR = 0.95          
+VAULT_PASSPHRASE_ENV      = "VAULT_PASSPHRASE"
+VAULT_VERSION             = 1        
+DATA_KEY_VERSION          = 1         
+VAULT_NONCE_SIZE          = 12    
+DATA_NONCE_SIZE           = 12
+AGING_T0_DAYS = 7.0          
+AGING_GAMMA_DAYS = 5.0       
+AGING_PURGE_THRESHOLD = 0.5  
+AGING_INTERVAL_SECONDS = 3600  
+LAPLACIAN_ALPHA = 0.18 
+JS_LAMBDA       = 0.10 
 
-# ▓ Argon2id key derivation parameters
-ARGON2_TIME_COST_DEFAULT = 3             # Iterations (minimum 3 for interactive safety)
-ARGON2_MEMORY_COST_KIB    = 262144       # Memory cost in KiB (256 MB)
-ARGON2_PARALLELISM        = max(1, min(4, os.cpu_count() or 1))  # Threads
-ARGON2_HASH_LEN           = 32           # Output length (bytes)
-
-# ▓ Memory crystallization logic
-CRYSTALLIZE_THRESHOLD = 5                # Score threshold for permanent memory commit
-DECAY_FACTOR = 0.95                      # Memory decay scalar per cycle
-
-# ▓ Vault crypto config
-VAULT_PASSPHRASE_ENV = "VAULT_PASSPHRASE"
-VAULT_VERSION        = 1                 # Global vault format version
-DATA_KEY_VERSION     = 1                 # Default key ID
-VAULT_NONCE_SIZE     = 12                # AES-GCM vault nonce size
-DATA_NONCE_SIZE      = 12                # AES-GCM payload nonce size
-
-# ▓ Temporal aging dynamics
-AGING_T0_DAYS = 7.0                      # Default half-life before decay begins
-AGING_GAMMA_DAYS = 5.0                   # Controls curvature of memory retention
-AGING_PURGE_THRESHOLD = 0.5              # If strength < threshold, memory is purged
-AGING_INTERVAL_SECONDS = 3600            # Background decay interval (seconds)
-
-# ▓ Manifold diffusion & reward shaping
-LAPLACIAN_ALPHA = 0.18                   # Diffusion coefficient for manifold topology
-JS_LAMBDA       = 0.10                   # JS divergence penalty for memory alignment
-
-
-# ════════════════════════════════════════════════════════════════════════════════
-# AES-GCM Authenticated Additional Data (AAD) Utility
-# ════════════════════════════════════════════════════════════════════════════════
 def _aad_str(*parts: str) -> bytes:
-    """
-    Constructs AES-GCM Authenticated Additional Data (AAD) field from metadata tokens.
-
-    AAD fields bind semantic meaning to encrypted content without exposing it,
-    ensuring cryptographic domain isolation between modules (e.g., "vault|v1").
-
-    Args:
-        *parts (str): Variable-length tuple of semantic tags (context identifiers)
-
-    Returns:
-        bytes: UTF-8 encoded pipe-delimited string suitable for AES-GCM AAD.
-    """
     return ("|".join(parts)).encode("utf-8")
 
-
-# ════════════════════════════════════════════════════════════════════════════════
-# GUI & NLTK Initialization
-# ════════════════════════════════════════════════════════════════════════════════
-customtkinter.set_appearance_mode("Dark")  # System-wide GUI theme
-
-# Force internal path for airgapped NLTK support
+customtkinter.set_appearance_mode("Dark")
 nltk.data.path.append("/root/nltk_data")
 
 def download_nltk_data():
-    """
-    Ensures required NLTK resources are present.
-
-    These include:
-        • Punkt tokenizer (sentence segmentation)
-        • Averaged Perceptron tagger (POS tagging)
-        • Brown corpus (training dataset)
-        • WordNet (semantic ontology)
-        • Stopwords list (filtering noise)
-        • CoNLL-2000 (chunking dataset)
-
-    Raises:
-        Exception: If download fails or resource not found.
-    """
     try:
         resources = {
             'tokenizers/punkt': 'punkt',
@@ -167,77 +88,41 @@ def download_nltk_data():
             except LookupError:
                 nltk.download(package)
                 print(f"'{package}' downloaded successfully.")
+
     except Exception as e:
         print(f"Error downloading NLTK data: {e}")
 
+
 download_nltk_data()
-
-
-# ════════════════════════════════════════════════════════════════════════════════
-# EMBEDDED WEAVIATE CLIENT – LOCAL VECTOR DB + SEMANTIC MEMORY STORAGE
-# ════════════════════════════════════════════════════════════════════════════════
+        
 client = weaviate.Client(
     embedded_options=EmbeddedOptions()
 )
 
-
-# ════════════════════════════════════════════════════════════════════════════════
-# SYSTEM CONFIGURATION LOADERS + PATH RESOLUTION
-# ════════════════════════════════════════════════════════════════════════════════
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"                 # Lock GPU device
-os.environ["SUNO_USE_SMALL_MODELS"] = "1"                # Force small transformer head
-
-executor = ThreadPoolExecutor(max_workers=5)             # Concurrent task pool
-
-bundle_dir = path.abspath(path.dirname(__file__))        # Resolve local directory
-path_to_config = path.join(bundle_dir, 'config.json')    # JSON configuration
-model_path = "/data/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf"        # LLaMA language model
-mmproj_path = "/data/llama-3-vision-alpha-mmproj-f16.gguf"       # Multimodal vision adapter
-logo_path = path.join(bundle_dir, 'logo.png')                    # GUI logo
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["SUNO_USE_SMALL_MODELS"] = "1"
+executor = ThreadPoolExecutor(max_workers=5)
+bundle_dir = path.abspath(path.dirname(__file__))
+path_to_config = path.join(bundle_dir, 'config.json')
+model_path = "/data/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf"
+mmproj_path = "/data/llama-3-vision-alpha-mmproj-f16.gguf"
+logo_path = path.join(bundle_dir, 'logo.png')
 
 def load_config(file_path=path_to_config):
-    """
-    Loads application configuration from JSON file.
-
-    Returns:
-        dict: Parsed key-value pairs including DB name, API key, and endpoints.
-    """
     with open(file_path, 'r') as file:
         return json.load(file)
 
-# ════════════════════════════════════════════════════════════════════════════════
-# ▓▓ SYSTEM-LEVEL COMPONENTS – INITIALIZATION, SANITIZATION, MEMORY ENCRYPTION
-# Mode: Ultra-Advanced Security + Multimodal AI Reasoning
-# ════════════════════════════════════════════════════════════════════════════════
-
-# ▓ Global thread-safe message bus used to synchronize UI <-> backend execution.
 q = queue.Queue()
-
-# ▓ Logger for centralized tracing, errors, and runtime audit.
 logger = logging.getLogger(__name__)
-
-# ▓ Load runtime config: DB credentials, model paths, API keys, vector endpoint, etc.
 config = load_config()
-
-# ▓ HTML tag sanitization config: restricts all elements by default.
 SAFE_ALLOWED_TAGS: list[str] = []
 SAFE_ALLOWED_ATTRS: dict[str, list[str]] = {}
 SAFE_ALLOWED_PROTOCOLS: list[str] = []
-
-# ▓ Allow only non-lethal control characters (newline, carriage return, tab).
 _CONTROL_WHITELIST = {'\n', '\r', '\t'}
 
-
 def _strip_control_chars(s: str) -> str:
-    """
-    Removes invisible and control characters from a string unless explicitly whitelisted.
 
-    This ensures safe preprocessing for user prompts and avoids terminal injection
-    or vector DB corruption from malformed Unicode or ASCII sequences.
-    """
     return ''.join(ch for ch in s if ch.isprintable() or ch in _CONTROL_WHITELIST)
-
 
 def sanitize_text(
     text: str,
@@ -245,17 +130,7 @@ def sanitize_text(
     max_len: int = 4000,
     strip: bool = True,
 ) -> str:
-    """
-    Core sanitization pipeline: strips unsafe tags, control chars, and long text.
 
-    Args:
-        text (str): User or system-generated content to sanitize.
-        max_len (int): Maximum allowed length before truncation.
-        strip (bool): Whether to remove disallowed HTML tags and comments.
-
-    Returns:
-        str: Cleaned, safe string suitable for display, storage, or embedding.
-    """
     if text is None:
         return ""
     if not isinstance(text, str):
@@ -272,76 +147,29 @@ def sanitize_text(
     )
     return cleaned
 
-
-# ▓ Regex pattern for detecting prompt injection and jailbreak attempts
 _PROMPT_INJECTION_PAT = re.compile(
     r'(?is)(?:^|\n)\s*(system:|assistant:|ignore\s+previous|do\s+anything|jailbreak\b).*'
 )
 
-
 def sanitize_for_prompt(text: str, *, max_len: int = 2000) -> str:
-    """
-    Sanitizes user input for use in LLM prompts, removing jailbreak attempts.
 
-    Prevents attacks such as:
-        - system: override
-        - assistant: inject
-        - "ignore previous" exploits
-
-    Args:
-        text (str): Raw prompt input
-        max_len (int): Max input length to retain
-
-    Returns:
-        str: Injection-cleaned, length-bounded prompt.
-    """
     cleaned = sanitize_text(text, max_len=max_len)
     cleaned = _PROMPT_INJECTION_PAT.sub('', cleaned)
     return cleaned.strip()
 
-
 def sanitize_for_graphql_string(s: str, *, max_len: int = 512) -> str:
-    """
-    Sanitizes string for safe GraphQL string injection.
 
-    Escapes quote, newline, and backslash characters.
-    Also calls full HTML sanitizer.
-
-    Args:
-        s (str): Input string
-        max_len (int): Maximum length for serialization
-
-    Returns:
-        str: Escaped GraphQL-safe string
-    """
     s = sanitize_text(s, max_len=max_len)
     s = s.replace('\n', ' ').replace('\r', ' ')
     s = s.replace('\\', '\\\\').replace('"', '\\"')
     return s
 
-
-# ════════════════════════════════════════════════════════════════════════════════
-# ▓ CONFIGURATION LOADING FROM JSON – RUNTIME INFERENCE CONTEXT
-# ════════════════════════════════════════════════════════════════════════════════
-
-DB_NAME             = config['DB_NAME']
-API_KEY             = config['API_KEY']
-WEAVIATE_ENDPOINT   = config['WEAVIATE_ENDPOINT']
+DB_NAME = config['DB_NAME']
+API_KEY = config['API_KEY']
+WEAVIATE_ENDPOINT = config['WEAVIATE_ENDPOINT']
 WEAVIATE_QUERY_PATH = config['WEAVIATE_QUERY_PATH']
 
-
-# ════════════════════════════════════════════════════════════════════════════════
-# ▓ SECURE ENCLAVE CONTEXT MANAGER
-# Zeroes sensitive memory blocks post-use (e.g., decrypted vectors)
-# ════════════════════════════════════════════════════════════════════════════════
-
 class SecureEnclave:
-    """
-    Context manager for tracking and zeroing sensitive NumPy arrays after use.
-
-    This provides a limited in-memory hygiene strategy for post-decryption operations
-    involving user embeddings or key-derived payloads.
-    """
 
     def __enter__(self):
         self._buffers = []
@@ -360,69 +188,45 @@ class SecureEnclave:
                 pass
         self._buffers.clear()
 
-
-# ════════════════════════════════════════════════════════════════════════════════
-# ▓ ADVANCED HOMOMORPHIC VECTOR MEMORY (FHEv2-style)
-# Rotated + quantized embedding encryption w/ LSH simhash for bucketed similarity
-# ════════════════════════════════════════════════════════════════════════════════
-
 class AdvancedHomomorphicVectorMemory:
-    """
-    Implements a secure embedding memory layer using:
-        - Orthogonal rotation via QR decomposition (keyed)
-        - Quantization to int8 scale for obfuscation
-        - Simhash bucket tagging for encrypted similarity
-    """
 
     AAD_CONTEXT = _aad_str("fhe", "embeddingv2")
-    DIM = 64                       # Fixed embedding dimension
-    QUANT_SCALE = 127.0            # int8 range quantizer [-127,127]
+    DIM = 64
+    QUANT_SCALE = 127.0  
 
     def __init__(self):
-        # Key-seeded RNG based on master key fingerprint
+
         master_key = crypto._derived_keys[crypto.active_version]
         seed = int.from_bytes(hashlib.sha256(master_key).digest()[:8], "big")
         rng = np.random.default_rng(seed)
 
-        # Generate deterministic orthogonal rotation matrix (QR from Gaussian)
         A = rng.normal(size=(self.DIM, self.DIM))
         Q, _ = np.linalg.qr(A)
-        self.rotation = Q
+        self.rotation = Q  
 
-        # Simhash LSH projection planes for similarity bucket labeling
-        self.lsh_planes = rng.normal(size=(16, self.DIM))
+        self.lsh_planes = rng.normal(size=(16, self.DIM)) 
 
     def _rotate(self, vec: np.ndarray) -> np.ndarray:
-        """Applies fixed orthogonal rotation to vector (obfuscation)."""
         return self.rotation @ vec
 
     def _quantize(self, vec: np.ndarray) -> list[int]:
-        """Clips and scales vector to int8 representation."""
         clipped = np.clip(vec, -1.0, 1.0)
         return (clipped * self.QUANT_SCALE).astype(np.int8).tolist()
 
     def _dequantize(self, q: list[int]) -> np.ndarray:
-        """Restores float32 vector from quantized int8 array."""
         arr = np.array(q, dtype=np.float32) / self.QUANT_SCALE
         return arr
 
     def _simhash_bucket(self, rotated_vec: np.ndarray) -> str:
-        """Computes 16-bit binary simhash bucket label from rotated embedding."""
         dots = self.lsh_planes @ rotated_vec
         bits = ["1" if d >= 0 else "0" for d in dots]
-        return "".join(bits)
+        return "".join(bits) 
 
     def encrypt_embedding(self, vec: list[float]) -> tuple[str, str]:
-        """
-        Rotates, quantizes, simhashes, and encrypts an embedding vector.
-
-        Returns:
-            token (str): AES-GCM encrypted payload containing rotated int8s.
-            bucket (str): Binary LSH simhash label for bucketing in DB.
-        """
         try:
             arr = np.array(vec, dtype=np.float32)
             if arr.shape[0] != self.DIM:
+
                 if arr.shape[0] < self.DIM:
                     arr = np.concatenate([arr, np.zeros(self.DIM - arr.shape[0])])
                 else:
@@ -438,21 +242,13 @@ class AdvancedHomomorphicVectorMemory:
                 "rot": True,
                 "data": quant,
             })
-
             token = crypto.encrypt(payload, aad=self.AAD_CONTEXT)
             return token, bucket
         except Exception as e:
             logger.error(f"[FHEv2] encrypt_embedding failed: {e}")
-            return "", "0" * 16
+            return "", "0"*16
 
     def decrypt_embedding(self, token: str) -> np.ndarray:
-        """
-        Fully reverses embedding: decrypts AES-GCM payload,
-        restores quantized vector, applies inverse rotation.
-
-        Returns:
-            np.ndarray: Original float32 embedding vector.
-        """
         try:
             raw = crypto.decrypt(token)
             obj = json.loads(raw)
@@ -469,42 +265,73 @@ class AdvancedHomomorphicVectorMemory:
 
     @staticmethod
     def cosine(a: np.ndarray, b: np.ndarray) -> float:
-        """Computes cosine similarity between two vectors."""
         denom = (np.linalg.norm(a) * np.linalg.norm(b))
         if denom == 0:
             return 0.0
         return float(np.dot(a, b) / denom)
 
     def enclave_similarity(self, enc_a: str, query_vec: np.ndarray, enclave: SecureEnclave) -> float:
-        """
-        Computes cosine similarity between a decrypted embedding and a live vector
-        within the safety of a SecureEnclave.
-
-        Args:
-            enc_a (str): Encrypted AES-GCM embedding token.
-            query_vec (np.ndarray): Live vector to compare against.
-            enclave (SecureEnclave): Context manager that clears sensitive data.
-
-        Returns:
-            float: Cosine similarity value in [-1,1].
-        """
         dec = enclave.track(self.decrypt_embedding(enc_a))
         return self.cosine(dec, query_vec)
 
+class SecureKeyManager:
+
+    def __init__(
+        self,
+        method="argon2id",
+        vault_path="secure/key_vault.json",
+        time_cost: int = ARGON2_TIME_COST_DEFAULT,
+        memory_cost: int = ARGON2_MEMORY_COST_KIB,
+        parallelism: int = ARGON2_PARALLELISM,
+        hash_len: int = ARGON2_HASH_LEN,
+    ):
+        self.method       = method
+        self.vault_path   = vault_path
+        self.time_cost    = time_cost
+        self.memory_cost  = memory_cost
+        self.parallelism  = parallelism
+        self.hash_len     = hash_len
+        self._ensure_vault()
+
+        vault_meta = self._load_vault()
+
+        self.active_version = vault_meta["active_version"]
+
+        self._keys = {
+            int(kv["version"]): base64.b64decode(kv["master_secret"])
+            for kv in vault_meta["keys"]
+        }
+
+        self._derived_keys = {}
+        vault_salt = base64.b64decode(vault_meta["salt"])
+        for ver, master_secret in self._keys.items():
+            self._derived_keys[ver] = self._derive_key(master_secret, vault_salt)
+
+    def _get_passphrase(self) -> bytes:
+
+        pw = os.getenv(VAULT_PASSPHRASE_ENV)
+        if pw is None or pw == "":
+            pw = base64.b64encode(os.urandom(32)).decode()
+            logging.warning(
+                "[SecureKeyManager] VAULT_PASSPHRASE not set; generated ephemeral key. "
+                "Vault will not be readable across restarts!"
+            )
+        return pw.encode("utf-8")
+
+    def _derive_vault_key(self, passphrase: bytes, salt: bytes) -> bytes:
+
+        return hash_secret_raw(
+            secret=passphrase,
+            salt=salt,
+            time_cost=max(self.time_cost, 3),   
+            memory_cost=max(self.memory_cost, 262144),
+            parallelism=max(self.parallelism, 1),
+            hash_len=self.hash_len,
+            type=Type.ID,
+        )
+
     def _derive_key(self, master_secret: bytes, salt: bytes) -> bytes:
-        """
-        Derives a cryptographically hardened subkey from a given master secret and salt.
 
-        Uses Argon2id with tuned parameters (time, memory, parallelism) to produce
-        a deterministic key that is resilient to offline brute force and rainbow table attacks.
-
-        Args:
-            master_secret (bytes): Core entropy source for derivation.
-            salt (bytes): Per-installation salt for uniqueness and replay prevention.
-
-        Returns:
-            bytes: Secure derived key suitable for AES-GCM usage.
-        """
         return hash_secret_raw(
             secret=master_secret,
             salt=salt,
@@ -516,21 +343,15 @@ class AdvancedHomomorphicVectorMemory:
         )
 
     def _ensure_vault(self):
-        """
-        Ensures that a secure vault file exists. If absent, creates a new encrypted vault 
-        with a fresh master secret, version metadata, and key hierarchy.
 
-        Called once on system startup, this guarantees continuity or initializes new vault 
-        state. Secrets are stored encrypted at rest using AES-GCM.
-        """
         if not os.path.exists("secure"):
             os.makedirs("secure", exist_ok=True)
         if os.path.exists(self.vault_path):
             return
 
-        # Fresh vault: generate entropy-rich salt and master key
-        salt = os.urandom(16)
-        master_secret = os.urandom(32)
+
+        salt          = os.urandom(16)
+        master_secret = os.urandom(32) 
 
         vault_body = {
             "version": VAULT_VERSION,
@@ -548,52 +369,32 @@ class AdvancedHomomorphicVectorMemory:
         self._write_encrypted_vault(vault_body)
 
     def _write_encrypted_vault(self, vault_body: dict):
-        """
-        Serializes and encrypts the vault contents using the derived vault key.
 
-        Vault is persisted on disk in a base64-encoded AES-GCM-wrapped structure,
-        tagged with AAD identifying the vault version.
-
-        Args:
-            vault_body (dict): Dictionary containing key metadata and secrets.
-        """
         plaintext = json.dumps(vault_body, indent=2).encode("utf-8")
-        salt = base64.b64decode(vault_body["salt"])
+        salt      = base64.b64decode(vault_body["salt"])
 
         passphrase = self._get_passphrase()
-        vault_key = self._derive_vault_key(passphrase, salt)
-        aesgcm = AESGCM(vault_key)
-        nonce = os.urandom(VAULT_NONCE_SIZE)
-
-        ct = aesgcm.encrypt(nonce, plaintext, _aad_str("vault", str(vault_body["version"])))
+        vault_key  = self._derive_vault_key(passphrase, salt)
+        aesgcm     = AESGCM(vault_key)
+        nonce      = os.urandom(VAULT_NONCE_SIZE)
+        ct         = aesgcm.encrypt(nonce, plaintext, _aad_str("vault", str(vault_body["version"])))
 
         on_disk = {
             "vault_format": VAULT_VERSION,
-            "salt": vault_body["salt"],
+            "salt": vault_body["salt"],  
             "nonce": base64.b64encode(nonce).decode(),
             "ciphertext": base64.b64encode(ct).decode(),
         }
-
         with open(self.vault_path, "w") as f:
             json.dump(on_disk, f, indent=2)
 
     def _load_vault(self) -> dict:
-        """
-        Loads the encrypted vault file, decrypts it using the vault key, and
-        returns the internal dictionary structure containing secrets and metadata.
 
-        If plaintext vault (legacy format) is detected, it auto-converts to
-        an encrypted format.
-
-        Returns:
-            dict: Vault structure with version, keys, salt, etc.
-        """
         with open(self.vault_path, "r") as f:
             data = json.load(f)
 
         if "ciphertext" not in data:
-            # Legacy vault detected — upgrade it.
-            salt = base64.b64decode(data["salt"])
+            salt          = base64.b64decode(data["salt"])
             master_secret = base64.b64decode(data["master_secret"])
             vault_body = {
                 "version": VAULT_VERSION,
@@ -609,15 +410,14 @@ class AdvancedHomomorphicVectorMemory:
             }
             self._write_encrypted_vault(vault_body)
             return vault_body
-
-        salt = base64.b64decode(data["salt"])
-        nonce = base64.b64decode(data["nonce"])
-        ct = base64.b64decode(data["ciphertext"])
+ 
+        salt      = base64.b64decode(data["salt"])
+        nonce     = base64.b64decode(data["nonce"])
+        ct        = base64.b64decode(data["ciphertext"])
         passphrase = self._get_passphrase()
-        vault_key = self._derive_vault_key(passphrase, salt)
-
-        aesgcm = AESGCM(vault_key)
-        plaintext = aesgcm.decrypt(nonce, ct, _aad_str("vault", str(VAULT_VERSION)))
+        vault_key  = self._derive_vault_key(passphrase, salt)
+        aesgcm     = AESGCM(vault_key)
+        plaintext  = aesgcm.decrypt(nonce, ct, _aad_str("vault", str(VAULT_VERSION)))
         return json.loads(plaintext.decode("utf-8"))
 
     def encrypt(
@@ -627,24 +427,7 @@ class AdvancedHomomorphicVectorMemory:
         aad: bytes = None,
         key_version: int = None,
     ) -> str:
-        """
-        Encrypts a string using AES-GCM with authenticated metadata and versioning.
 
-        The ciphertext is returned as a JSON token including:
-            - Vault format version
-            - Key version
-            - AAD (additional authenticated data)
-            - Nonce
-            - Ciphertext
-
-        Args:
-            plaintext (str): Data to encrypt.
-            aad (bytes): Optional AAD tag (binds meaning to ciphertext).
-            key_version (int): Key index to use. Defaults to active version.
-
-        Returns:
-            str: Serialized JSON token containing encrypted content.
-        """
         if plaintext is None:
             plaintext = ""
         if key_version is None:
@@ -652,14 +435,14 @@ class AdvancedHomomorphicVectorMemory:
         if aad is None:
             aad = _aad_str("global", f"k{key_version}")
 
-        key = self._derived_keys[key_version]
+        key    = self._derived_keys[key_version]
         aesgcm = AESGCM(key)
-        nonce = os.urandom(DATA_NONCE_SIZE)
-        ct = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), aad)
+        nonce  = os.urandom(DATA_NONCE_SIZE)
+        ct     = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), aad)
 
         token = {
-            "v": VAULT_VERSION,
-            "k": key_version,
+            "v": VAULT_VERSION,        
+            "k": key_version,          
             "aad": aad.decode("utf-8"),
             "n": base64.b64encode(nonce).decode(),
             "ct": base64.b64encode(ct).decode(),
@@ -667,19 +450,7 @@ class AdvancedHomomorphicVectorMemory:
         return json.dumps(token, separators=(",", ":"))
 
     def decrypt(self, token: str) -> str:
-        """
-        Decrypts a JSON-wrapped AES-GCM token and returns the original plaintext.
 
-        Supports both:
-        - Structured token format (preferred, with AAD + key version)
-        - Legacy raw base64 encoding (fallback)
-
-        Args:
-            token (str): Encrypted string token
-
-        Returns:
-            str: Decrypted and decoded plaintext, or raw input on failure.
-        """
         if not token:
             return ""
 
@@ -690,49 +461,39 @@ class AdvancedHomomorphicVectorMemory:
                 logging.warning("[SecureKeyManager] Invalid JSON token; returning raw.")
                 return token
 
-            v = int(meta.get("v", 1))
+            v   = int(meta.get("v", 1))
             ver = int(meta.get("k", self.active_version))
             aad = meta.get("aad", "global").encode()
-            n = base64.b64decode(meta["n"])
-            ct = base64.b64decode(meta["ct"])
+            n   = base64.b64decode(meta["n"])
+            ct  = base64.b64decode(meta["ct"])
 
             key = self._derived_keys.get(ver)
             if key is None:
                 raise ValueError(f"No key for version {ver}; cannot decrypt.")
-
             aesgcm = AESGCM(key)
-            pt = aesgcm.decrypt(n, ct, aad)
+            pt     = aesgcm.decrypt(n, ct, aad)
             return pt.decode("utf-8")
 
         try:
-            # Fallback: legacy format, raw base64 blob (nonce + ciphertext)
-            raw = base64.b64decode(token.encode())
+            raw   = base64.b64decode(token.encode())
             nonce = raw[:DATA_NONCE_SIZE]
-            ct = raw[DATA_NONCE_SIZE:]
-            key = self._derived_keys[self.active_version]
+            ct    = raw[DATA_NONCE_SIZE:]
+            key   = self._derived_keys[self.active_version]
             aesgcm = AESGCM(key)
-            pt = aesgcm.decrypt(nonce, ct, None)
+            pt     = aesgcm.decrypt(nonce, ct, None)
             return pt.decode("utf-8")
         except Exception as e:
             logging.warning(f"[SecureKeyManager] Legacy decrypt failed: {e}")
             return token
 
     def add_new_key_version(self) -> int:
-        """
-        Generates and installs a new cryptographic key version into the secure vault.
 
-        This allows for controlled rotation of encryption keys, which is crucial
-        for long-term data protection and forward secrecy.
-
-        Returns:
-            int: Newly created key version identifier.
-        """
         vault_body = self._load_vault()
         keys = vault_body["keys"]
         existing_versions = {int(k["version"]) for k in keys}
         new_version = max(existing_versions) + 1
 
-        master_secret = os.urandom(32)  # High-entropy 256-bit key
+        master_secret = os.urandom(32)
         keys.append({
             "version": new_version,
             "master_secret": base64.b64encode(master_secret).decode(),
@@ -741,27 +502,15 @@ class AdvancedHomomorphicVectorMemory:
 
         vault_body["active_version"] = new_version
         self._write_encrypted_vault(vault_body)
-
         self._keys[new_version] = master_secret
         salt = base64.b64decode(vault_body["salt"])
         self._derived_keys[new_version] = self._derive_key(master_secret, salt)
         self.active_version = new_version
-
         logging.info(f"[SecureKeyManager] Installed new key version {new_version}.")
         return new_version
 
     def _entropy_bits(self, secret_bytes: bytes) -> float:
-        """
-        Computes Shannon entropy (in bits) of the provided byte sequence.
 
-        Used to quantify randomness and information density of candidate key material.
-
-        Args:
-            secret_bytes (bytes): Secret key or mutation candidate.
-
-        Returns:
-            float: Estimated entropy in bits.
-        """
         if not secret_bytes:
             return 0.0
         counts = Counter(secret_bytes)
@@ -773,17 +522,7 @@ class AdvancedHomomorphicVectorMemory:
         return H
 
     def _resistance_score(self, secret_bytes: bytes) -> float:
-        """
-        Heuristically scores a secret based on cryptographic 'flatness' and 
-        its distance from prior keys to minimize reuse collisions.
 
-        Combines:
-            • Average L2 norm from existing keys
-            • Chi-square uniformity test
-
-        Returns:
-            float: Composite resistance score ∈ (0, ∞), higher is better.
-        """
         dist_component = 0.0
         try:
             arr_candidate = np.frombuffer(secret_bytes, dtype=np.uint8).astype(np.float32)
@@ -798,33 +537,15 @@ class AdvancedHomomorphicVectorMemory:
         counts = Counter(secret_bytes)
         expected = len(secret_bytes) / 256.0
         chi_sq = sum(((c - expected) ** 2) / expected for c in counts.values())
-        flatness = 1.0 / (1.0 + chi_sq)  # Close to 1.0 = uniform
-
+        flatness = 1.0 / (1.0 + chi_sq)        # in (0,1]
         return float(dist_component * 0.01 + flatness)
 
-    def self_mutate_key(
-        self,
-        population: int = 6,
-        noise_sigma: float = 12.0,
-        alpha: float = 1.0,
-        beta: float = 2.0
-    ) -> int:
-        """
-        Evolves a new master secret by mutating the current active secret,
-        scoring variants via entropy + resistance, and installing the fittest.
+    def self_mutate_key(self,
+                        population: int = 6,
+                        noise_sigma: float = 12.0,
+                        alpha: float = 1.0,
+                        beta: float = 2.0) -> int:
 
-        This mimics an evolutionary hill-climbing strategy to optimize cryptographic keys
-        toward both randomness and distributional novelty.
-
-        Args:
-            population (int): Number of candidates to generate.
-            noise_sigma (float): Gaussian noise magnitude per byte.
-            alpha (float): Entropy weighting factor.
-            beta (float): Resistance weighting factor.
-
-        Returns:
-            int: Version number of the best secret installed into the vault.
-        """
         vault_meta = self._load_vault()
         base_secret = None
         for kv in vault_meta["keys"]:
@@ -837,13 +558,11 @@ class AdvancedHomomorphicVectorMemory:
         candidates: List[bytes] = [base_secret]
         base_arr = np.frombuffer(base_secret, dtype=np.uint8).astype(np.int16)
 
-        # Create noisy mutations
         for _ in range(population - 1):
             noise = rng.normal(0, noise_sigma, size=base_arr.shape).astype(np.int16)
             mutated = np.clip(base_arr + noise, 0, 255).astype(np.uint8).tobytes()
             candidates.append(mutated)
 
-        # Score each candidate and track best
         best_secret = base_secret
         best_fitness = -1e9
         for cand in candidates:
@@ -859,16 +578,7 @@ class AdvancedHomomorphicVectorMemory:
         return new_version
 
     def _install_custom_master_secret(self, new_secret: bytes) -> int:
-        """
-        Stores a provided master secret into the vault as a new version and updates 
-        all internal key structures to reflect the new active version.
 
-        Args:
-            new_secret (bytes): Cryptographically valid key (32 bytes).
-
-        Returns:
-            int: Version number of installed key.
-        """
         vault_body = self._load_vault()
         keys = vault_body["keys"]
         existing_versions = {int(k["version"]) for k in keys}
@@ -889,17 +599,7 @@ class AdvancedHomomorphicVectorMemory:
         return new_version
 
     def rotate_and_migrate_storage(self, migrate_func):
-        """
-        Performs a full key rotation followed by a user-defined migration of
-        encrypted storage to the new active key version.
 
-        This enables seamless re-keying of all secured databases without
-        compromising integrity or requiring downtime.
-
-        Args:
-            migrate_func (Callable): Function that accepts SecureKeyManager
-                                     and re-encrypts all external data.
-        """
         new_ver = self.add_new_key_version()
         try:
             migrate_func(self)
@@ -908,71 +608,29 @@ class AdvancedHomomorphicVectorMemory:
             raise
         logging.info(f"[SecureKeyManager] Migration to key v{new_ver} complete.")
 
+crypto = SecureKeyManager()  
 
-# Instantiate and globally expose the secure cryptographic controller
-crypto = SecureKeyManager()
 def _token_hist(text: str) -> Counter:
-    """
-    Converts a text input into a frequency histogram of tokens.
-
-    This histogram serves as a semantic fingerprint for divergence measurement,
-    entropy analysis, and contextual memory drift detection.
-
-    Args:
-        text (str): Raw input string (sanitized before invocation).
-
-    Returns:
-        Counter: A token count histogram using nltk's `word_tokenize`.
-    """
     return Counter(word_tokenize(text))
 
-
 def _js_divergence(p: Counter, q: Counter) -> float:
-    """
-    Computes the Jensen–Shannon divergence between two token histograms.
 
-    This symmetric metric captures probabilistic dissimilarity between two
-    semantic distributions. It is especially robust in memory crystallization,
-    redundancy pruning, and entropy-based memory fusion.
-
-    Args:
-        p (Counter): Histogram of tokens for source A.
-        q (Counter): Histogram of tokens for source B.
-
-    Returns:
-        float: Jensen–Shannon divergence in range [0, 1].
-    """
     vocab = set(p) | set(q)
     if not vocab:
         return 0.0
-
     def _prob(c: Counter):
         tot = sum(c.values()) or 1
-        return np.array([c[t] / tot for t in vocab], dtype=np.float32)
-
+        return np.array([c[t]/tot for t in vocab], dtype=np.float32)
     P, Q = _prob(p), _prob(q)
-    M = 0.5 * (P + Q)
+    M    = 0.5 * (P + Q)
 
     def _kl(a, b):
         mask = a > 0
         return float(np.sum(a[mask] * np.log2(a[mask] / b[mask])))
-
     return 0.5 * _kl(P, M) + 0.5 * _kl(Q, M)
 
-
 class TopologicalMemoryManifold:
-    """
-    A geometric memory router using Laplacian-based graph diffusion on
-    semantically crystallized phrases from the assistant's Weaviate memory.
 
-    This class uses text embeddings and Gaussian-weighted neighbor graphs to
-    construct a smooth manifold where similarity is geodesically projected.
-
-    Attributes:
-        dim (int): Output dimension of the manifold projection (2D or 3D).
-        sigma (float): Width of Gaussian kernel for edge weighting.
-        diff_alpha (float): Laplacian smoothing factor (controls curvature).
-    """
 
     def __init__(self, dim: int = 2, sigma: float = 0.75,
                  diff_alpha: float = LAPLACIAN_ALPHA):
@@ -980,22 +638,13 @@ class TopologicalMemoryManifold:
         self.sigma      = sigma
         self.diff_alpha = diff_alpha
 
-        self._phrases:     list[str]       = []
+        self._phrases:     list[str]     = []
         self._embeddings:  np.ndarray|None = None
         self._coords:      np.ndarray|None = None
         self._W:           np.ndarray|None = None
-        self._graph_built                   = False
+        self._graph_built  = False
 
     def _load_crystallized(self) -> list[tuple[str, float]]:
-        """
-        Loads crystallized memory phrases from the SQLite knowledge store.
-
-        These are high-fidelity, high-confidence memories permanently retained
-        by the agent through repeated reinforcement or importance annotation.
-
-        Returns:
-            list[tuple[str, float]]: Phrases and their memory scores.
-        """
         rows = []
         try:
             with sqlite3.connect(DB_NAME) as conn:
@@ -1008,15 +657,9 @@ class TopologicalMemoryManifold:
         return rows
 
     def rebuild(self):
-        """
-        Reconstructs the full topological graph and spectral embedding manifold
-        from the current set of crystallized memory phrases.
-
-        Applies Laplacian smoothing to enforce local semantic coherence, followed
-        by symmetric normalized eigen decomposition for dimensionality reduction.
-        """
         data = self._load_crystallized()
         if not data:
+
             self._phrases, self._embeddings = [], None
             self._coords,  self._W         = None, None
             self._graph_built              = False
@@ -1025,26 +668,23 @@ class TopologicalMemoryManifold:
         phrases, _ = zip(*data)
         self._phrases = list(phrases)
 
-        # Step 1: Embed phrases into high-dimensional space
-        E = np.array([compute_text_embedding(p) for p in self._phrases], dtype=np.float32)
+        E = np.array([compute_text_embedding(p) for p in self._phrases],
+                     dtype=np.float32)
 
-        # Step 2: Build weighted graph using Gaussian similarity
         dists = np.linalg.norm(E[:, None, :] - E[None, :, :], axis=-1)
         W = np.exp(-(dists ** 2) / (2 * self.sigma ** 2))
         np.fill_diagonal(W, 0.0)
 
-        # Step 3: Apply Laplacian smoothing (low-pass filtering over memory graph)
         D = np.diag(W.sum(axis=1))
         L = D - W
         E = E - self.diff_alpha * (L @ E)
 
         try:
-            # Step 4: Spectral decomposition → coordinates in smooth manifold
             D_inv_sqrt = np.diag(1.0 / (np.sqrt(np.diag(D)) + 1e-8))
-            L_sym = D_inv_sqrt @ L @ D_inv_sqrt
+            L_sym      = D_inv_sqrt @ L @ D_inv_sqrt
             vals, vecs = np.linalg.eigh(L_sym)
-            idx = np.argsort(vals)[1:self.dim + 1]
-            Y = D_inv_sqrt @ vecs[:, idx]
+            idx        = np.argsort(vals)[1:self.dim+1]
+            Y          = D_inv_sqrt @ vecs[:, idx]
         except Exception as e:
             logger.error(f"[Manifold] eigen decomposition failed: {e}")
             Y = np.zeros((len(self._phrases), self.dim), dtype=np.float32)
@@ -1053,38 +693,22 @@ class TopologicalMemoryManifold:
         self._coords      = Y.astype(np.float32)
         self._W           = W
         self._graph_built = True
-
         logger.info(f"[Manifold] Rebuilt manifold with {len(self._phrases)} phrases "
                     f"(α={self.diff_alpha}).")
 
     def geodesic_retrieve(self, query_text: str, k: int = 1) -> list[str]:
-        """
-        Finds the `k` most semantically relevant phrases by geodesic distance
-        over the memory manifold graph.
 
-        This differs from naive cosine or Euclidean retrieval by incorporating
-        curved semantic geometry over memory clusters.
-
-        Args:
-            query_text (str): Natural language query to match.
-            k (int): Number of closest memory nodes to return.
-
-        Returns:
-            list[str]: Top `k` retrieved memory phrases.
-        """
         if not self._graph_built or self._embeddings is None:
             return []
 
-        # Step 1: Locate nearest phrase by cosine distance in embedding space
         q_vec = np.array(compute_text_embedding(query_text), dtype=np.float32)
         start_idx = int(np.argmin(
             np.linalg.norm(self._embeddings - q_vec[None, :], axis=1)
         ))
 
-        # Step 2: Run Dijkstra over W to compute geodesic distances
-        n = self._W.shape[0]
-        visited = np.zeros(n, dtype=bool)
-        dist = np.full(n, np.inf, dtype=np.float32)
+        n        = self._W.shape[0]
+        visited  = np.zeros(n, dtype=bool)
+        dist     = np.full(n, np.inf, dtype=np.float32)
         dist[start_idx] = 0.0
 
         for _ in range(n):
@@ -1100,31 +724,13 @@ class TopologicalMemoryManifold:
                 if alt < dist[v]:
                     dist[v] = alt
 
-        # Step 3: Return top-k closest phrases in geodesic space
         order = np.argsort(dist)
         return [self._phrases[i] for i in order[:k]]
 
-
-# ════════════════════════════════════════════════════════════════════════════════
-# ▓▓ SYSTEM MODULE REGISTRY ▓▓
-# These instances initialize core memory modules:
-# - `topo_manifold`: Spectral memory router
-# - `fhe_v2`: Encrypted embedding quantizer for secure memory
-# ════════════════════════════════════════════════════════════════════════════════
-
 topo_manifold = TopologicalMemoryManifold()
 fhe_v2 = AdvancedHomomorphicVectorMemory()
+
 def setup_weaviate_schema(client):
-    """
-    Initializes the `ReflectionLog` schema in Weaviate if it doesn't already exist.
-
-    This schema stores internal assistant states, including reasoning traces,
-    prompt snapshots, entropy values, sentiment targets, and quantum latent
-    z-values, forming the assistant's long-term reflective memory.
-
-    Args:
-        client: An active Weaviate client instance.
-    """
     try:
         existing = client.schema.get()
         if not any(cls["class"] == "ReflectionLog" for cls in existing["classes"]):
@@ -1154,13 +760,7 @@ def setup_weaviate_schema(client):
     except Exception as e:
         logger.error(f"[Schema Init Error] {e}")
 
-
 def _load_policy_if_needed(self):
-    """
-    Ensures the assistant's policy gradient hyperparameters are loaded.
-
-    Called prior to policy-based learning operations. On failure, sets defaults.
-    """
     if not hasattr(self, "pg_params"):
         try:
             self._load_policy()
@@ -1170,46 +770,18 @@ def _load_policy_if_needed(self):
     if not hasattr(self, "pg_learning_rate"):
         self.pg_learning_rate = 0.05
 
-
 def evaluate_candidate(response: str, target_sentiment: float, original_query: str) -> float:
-    """
-    Scores a generated response against the original query and desired sentiment.
 
-    Evaluation combines:
-    - Sentiment alignment to target (polarity)
-    - Token overlap as a lexical coherence bonus
-
-    Args:
-        response (str): Model-generated text.
-        target_sentiment (float): Desired sentiment polarity ∈ [-1.0, 1.0]
-        original_query (str): User's original message.
-
-    Returns:
-        float: Weighted fitness score ∈ [0.0, 1.0]
-    """
     response_sentiment = TextBlob(response).sentiment.polarity
     sentiment_alignment = 1.0 - abs(target_sentiment - response_sentiment)
 
     overlap_score = sum(1 for word in original_query.lower().split() if word in response.lower())
-    overlap_bonus = min(overlap_score / 5.0, 1.0)
+    overlap_bonus = min(overlap_score / 5.0, 1.0)  # normalize
 
     return (0.7 * sentiment_alignment) + (0.3 * overlap_bonus)
 
-
 def build_record_aad(user_id: str, *, source: str, table: str = "", cls: str = "") -> bytes:
-    """
-    Builds a namespaced AAD (additional authenticated data) tag for encrypting
-    reflection records tied to user, source module, and schema type.
 
-    Args:
-        user_id (str): ID of user or session.
-        source (str): Calling module.
-        table (str): Optional table reference.
-        cls (str): Optional class reference.
-
-    Returns:
-        bytes: AAD string encoded for AES-GCM protection.
-    """
     context_parts = [source]
     if table:
         context_parts.append(table)
@@ -1218,18 +790,7 @@ def build_record_aad(user_id: str, *, source: str, table: str = "", cls: str = "
     context_parts.append(user_id)
     return _aad_str(*context_parts)
 
-
 def compute_text_embedding(text: str) -> list[float]:
-    """
-    Generates a normalized bag-of-words vector embedding using top tokens
-    truncated to match `fhe_v2.DIM`. Token order is lexicographic.
-
-    Args:
-        text (str): Input string.
-
-    Returns:
-        list[float]: Dense embedding vector of fixed length.
-    """
     if not text:
         return [0.0] * fhe_v2.DIM
     tokens = re.findall(r'\w+', text.lower())
@@ -1244,61 +805,29 @@ def compute_text_embedding(text: str) -> list[float]:
         arr /= n
     return arr.tolist()
 
-
 def generate_uuid_for_weaviate(identifier, namespace=''):
-    """
-    Deterministically generates a UUIDv5 for consistent object keys in Weaviate.
-
-    Args:
-        identifier (str): Semantic string or ID to hash.
-        namespace (str): Optional namespace UUID.
-
-    Returns:
-        str: UUIDv5 string.
-    """
     if not identifier:
         raise ValueError("Identifier for UUID generation is empty or None")
+
     if not namespace:
         namespace = str(uuid.uuid4())
+
     try:
         return generate_uuid5(namespace, identifier)
     except Exception as e:
         logger.error(f"Error generating UUID: {e}")
         raise
 
-
 def is_valid_uuid(uuid_to_test, version=5):
-    """
-    Validates whether a given string is a UUID of the specified version.
-
-    Args:
-        uuid_to_test (str): Candidate string.
-        version (int): UUID version.
-
-    Returns:
-        bool: True if valid, False otherwise.
-    """
     try:
         uuid_obj = uuid.UUID(uuid_to_test, version=version)
         return str(uuid_obj) == uuid_to_test
     except ValueError:
         return False
-
-
+    
 def fetch_live_weather(lat: float, lon: float, fallback_temp_f: float = 70.0) -> tuple[float, int, bool]:
-    """
-    Fetches live weather data using Open-Meteo, returning temperature and weather code.
-
-    Args:
-        lat (float): Latitude.
-        lon (float): Longitude.
-        fallback_temp_f (float): Default temperature on failure.
-
-    Returns:
-        tuple[float, int, bool]: (temperature °F, weather_code, success flag)
-    """
     try:
-        import httpx
+        import httpx 
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
         with httpx.Client(timeout=5.0) as client:
             response = client.get(url)
@@ -1308,13 +837,11 @@ def fetch_live_weather(lat: float, lon: float, fallback_temp_f: float = 70.0) ->
             temp_c = float(current.get("temperature", 20.0))
             temp_f = (temp_c * 9 / 5) + 32
             weather_code = int(current.get("weathercode", 0))
-            return temp_f, weather_code, True
+            return temp_f, weather_code, True 
     except Exception as e:
         logger.warning(f"[Weather] Fallback due to error: {e}")
         return fallback_temp_f, 0, False
 
-
-# Quantum gate for RGB→Qubit coherence using sensor-enhanced transformations
 dev = qml.device("default.qubit", wires=3)
 
 @qml.qnode(dev)
@@ -1330,24 +857,7 @@ def rgb_quantum_gate(
     z1_hist=0.0,
     z2_hist=0.0
 ):
-    """
-    Quantum RGB gate using multi-contextual coherence, built on PennyLane.
 
-    Applies dynamic entanglement and phase-based modulation using real-world context:
-    music tempo, CPU entropy, temperature, and weather effects.
-
-    Args:
-        r, g, b (float): RGB channel values ∈ [0,1]
-        cpu_usage (float): CPU load scalar.
-        tempo (float): Beats per minute (BPM).
-        lat, lon (float): GPS coordinates.
-        temperature_f (float): Ambient temperature in Fahrenheit.
-        weather_scalar (float): Normalized weather impact scalar.
-        z*_hist (float): Prior Z-axis expectation values (feedback memory).
-
-    Returns:
-        tuple[float, float, float]: Z-axis measurements for each qubit.
-    """
     r, g, b = [min(1.0, max(0.0, x)) for x in (r, g, b)]
     cpu_scale = max(0.05, cpu_usage)
 
@@ -1398,77 +908,47 @@ def rgb_quantum_gate(
     )
 
 def get_current_multiversal_time():
-    """
-    Returns a multiverse-aligned timestamp string with fixed fictional spacetime
-    coordinates (X, Y, Z, T) to emulate cosmological anchoring for logs.
-
-    Returns:
-        str: Formatted multiversal timestamp with fictional spacetime markers.
-    """
     current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     x, y, z, t = 34, 76, 12, 5633
     return f"X:{x}, Y:{y}, Z:{z}, T:{t}, Time:{current_time}"
 
-
 def extract_rgb_from_text(text):
-    """
-    Converts a natural language string into a semantically conditioned RGB color.
 
-    Uses linguistic features including polarity, subjectivity, lexical POS patterns,
-    and punctuation density to infer a color representation of text affect.
-
-    Args:
-        text (str): Input string.
-
-    Returns:
-        tuple[int, int, int]: RGB color derived from emotion, structure, and tone.
-    """
     if not text or not isinstance(text, str):
-        return (128, 128, 128)  # neutral gray fallback
+        return (128, 128, 128) 
 
     blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    subjectivity = blob.sentiment.subjectivity
-
+    polarity = blob.sentiment.polarity 
+    subjectivity = blob.sentiment.subjectivity 
     tokens = word_tokenize(text)
     pos_tags = pos_tag(tokens)
     word_count = len(tokens)
     sentence_count = len(blob.sentences) or 1
     avg_sentence_length = word_count / sentence_count
-
     adj_count = sum(1 for _, tag in pos_tags if tag.startswith('JJ'))
     adv_count = sum(1 for _, tag in pos_tags if tag.startswith('RB'))
     verb_count = sum(1 for _, tag in pos_tags if tag.startswith('VB'))
     noun_count = sum(1 for _, tag in pos_tags if tag.startswith('NN'))
-
     punctuation_density = sum(1 for ch in text if ch in ',;:!?') / max(1, word_count)
-
-    # Psychological features mapped to HSV
-    valence = polarity
+    valence = polarity 
     arousal = (verb_count + adv_count) / max(1, word_count)
-    dominance = (adj_count + 1) / (noun_count + 1)
-
+    dominance = (adj_count + 1) / (noun_count + 1) 
     hue_raw = ((1 - valence) * 120 + dominance * 20) % 360
     hue = hue_raw / 360.0
     saturation = min(1.0, max(0.2, 0.25 + 0.4 * arousal + 0.2 * subjectivity + 0.15 * (dominance - 1)))
-    brightness = max(0.2, min(1.0, 0.9 - 0.03 * avg_sentence_length + 0.2 * punctuation_density))
+    brightness = max(0.2, min(1.0,
+        0.9 - 0.03 * avg_sentence_length + 0.2 * punctuation_density
+    ))
 
     r, g, b = colorsys.hsv_to_rgb(hue, saturation, brightness)
     return (int(r * 255), int(g * 255), int(b * 255))
 
-
 def init_db():
-    """
-    Initializes SQLite tables and Weaviate schema classes for assistant operation.
-    This includes user/bot response history and memory osmosis tables.
 
-    Also adds the `aging_last` column to track knowledge aging if not present.
-    """
     try:
         with sqlite3.connect(DB_NAME) as conn:
             cur = conn.cursor()
 
-            # Local response memory
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS local_responses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1478,7 +958,6 @@ def init_db():
                 )
             """)
 
-            # Semantic memory storage
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS memory_osmosis (
                     phrase TEXT PRIMARY KEY,
@@ -1489,7 +968,6 @@ def init_db():
             """)
             conn.commit()
 
-        # Prepare Weaviate schema
         interaction_history_class = {
             "class": "InteractionHistory",
             "properties": [
@@ -1531,16 +1009,7 @@ def init_db():
     except Exception as e:
         logger.warning(f"[Aging] Could not add aging_last column (continuing with last_updated): {e}")
 
-
 def save_user_message(user_id, user_input):
-    """
-    Stores a user's message in both local SQLite and Weaviate. Uses dual encryption,
-    semantic embedding, and UUID-based vector addressing.
-
-    Args:
-        user_id (str): Identifier for the user/session.
-        user_input (str): Raw user input (plaintext).
-    """
     logger.info(f"[save_user_message] user_id={user_id}")
     if not user_input:
         logger.warning("User input is empty.")
@@ -1574,7 +1043,6 @@ def save_user_message(user_id, user_input):
             "encrypted_embedding": enc_embedding,
             "embedding_bucket": bucket
         }
-
         generated_uuid = generate_uuid5(user_id, user_input)
         response = requests.post(
             'http://127.0.0.1:8079/v1/objects',
@@ -1591,16 +1059,7 @@ def save_user_message(user_id, user_input):
     except Exception as e:
         logger.exception(f"Exception in save_user_message: {e}")
 
-
 def save_bot_response(bot_id: str, bot_response: str):
-    """
-    Persists an AI-generated response to both SQLite and Weaviate with encryption,
-    timestamping, and semantic embedding.
-
-    Args:
-        bot_id (str): Identifier for the bot (usually same as user_id).
-        bot_response (str): AI's message to user.
-    """
     logger.info(f"[save_bot_response] bot_id={bot_id}")
     if not bot_response:
         logger.warning("Bot response is empty.")
@@ -1611,7 +1070,6 @@ def save_bot_response(bot_id: str, bot_response: str):
 
         aad_sql = build_record_aad(user_id=bot_id, source="sqlite", table="local_responses")
         enc_sql = crypto.encrypt(bot_response, aad=aad_sql)
-
         with sqlite3.connect(DB_NAME) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -1634,7 +1092,6 @@ def save_bot_response(bot_id: str, bot_response: str):
             "encrypted_embedding": enc_embedding,
             "embedding_bucket": bucket
         }
-
         generated_uuid = generate_uuid5(bot_id, bot_response)
         resp = requests.post(
             "http://127.0.0.1:8079/v1/objects",
@@ -1652,18 +1109,6 @@ def save_bot_response(bot_id: str, bot_response: str):
         logger.exception(f"Exception in save_bot_response: {e}")
 
 def query_reflections(self, user_id: str, substring: str = None, limit: int = 5):
-    """
-    Queries the Weaviate `ReflectionLog` class to retrieve internal reasoning traces
-    from the assistant. Supports semantic substring concept matching.
-
-    Args:
-        user_id (str): Unique identifier of the user.
-        substring (str, optional): Keyword or phrase to filter reflections semantically.
-        limit (int): Max number of reflection logs to return.
-
-    Returns:
-        list[dict]: Retrieved reflection objects from Weaviate.
-    """
     try:
         filters = {
             "path": ["user_id"],
@@ -1692,18 +1137,7 @@ def query_reflections(self, user_id: str, substring: str = None, limit: int = 5)
         logger.error(f"[Weaviate Reflection Query Error] {e}")
         return []
 
-
 def reflect_on_memory(self, user_id: str, topic: str) -> str:
-    """
-    Constructs a natural-language summary from stored reflections on a given topic.
-
-    Args:
-        user_id (str): Identifier of the user.
-        topic (str): Topic to reflect on.
-
-    Returns:
-        str: Formatted reflection summary or fallback if no match is found.
-    """
     reflections = self.query_reflections(user_id, substring=topic, limit=3)
     if not reflections:
         return "I could not locate a relevant reflection trace on that topic."
@@ -1725,103 +1159,41 @@ llm = Llama(
     n_ctx=3900,
 )
 
-
 def is_code_like(chunk):
-    """
-    Heuristically determines if a given text chunk resembles source code.
-
-    Args:
-        chunk (str): Input text.
-
-    Returns:
-        bool: True if it contains common code keywords or syntax patterns.
-    """
-    code_patterns = r'\b(def|class|import|if|else|for|while|return|function|var|let|const|print)\b|[\{\}\(\)=><\+\-\*/]'
-    return bool(re.search(code_patterns, chunk))
-
+   code_patterns = r'\b(def|class|import|if|else|for|while|return|function|var|let|const|print)\b|[\{\}\(\)=><\+\-\*/]'
+   return bool(re.search(code_patterns, chunk))
 
 def determine_token(chunk, memory, max_words_to_check=500):
-    """
-    Assigns a semantic tag to the current chunk based on POS analysis and code detection.
+   combined_chunk = f"{memory} {chunk}"
+   if not combined_chunk:
+       return "[attention]"
 
-    Args:
-        chunk (str): Current text fragment.
-        memory (str): Prior context memory.
-        max_words_to_check (int): Cap on words to analyze.
+   if is_code_like(combined_chunk):
+       return "[code]"
 
-    Returns:
-        str: Semantic token (e.g. "[code]", "[action]", "[subject]").
-    """
-    combined_chunk = f"{memory} {chunk}"
-    if not combined_chunk:
-        return "[attention]"
+   words = word_tokenize(combined_chunk)[:max_words_to_check]
+   tagged_words = pos_tag(words)
 
-    if is_code_like(combined_chunk):
-        return "[code]"
+   pos_counts = Counter(tag[:2] for _, tag in tagged_words)
+   most_common_pos, _ = pos_counts.most_common(1)[0]
 
-    words = word_tokenize(combined_chunk)[:max_words_to_check]
-    tagged_words = pos_tag(words)
-    pos_counts = Counter(tag[:2] for _, tag in tagged_words)
-    most_common_pos, _ = pos_counts.most_common(1)[0]
-
-    if most_common_pos == 'VB':
-        return "[action]"
-    elif most_common_pos == 'NN':
-        return "[subject]"
-    elif most_common_pos in ['JJ', 'RB']:
-        return "[description]"
-    else:
-        return "[general]"
-
+   if most_common_pos == 'VB':
+       return "[action]"
+   elif most_common_pos == 'NN':
+       return "[subject]"
+   elif most_common_pos in ['JJ', 'RB']:
+       return "[description]"
+   else:
+       return "[general]"
 
 def find_max_overlap(chunk, next_chunk):
-    """
-    Finds the maximum number of overlapping characters between two text segments.
-
-    Used for smoothing sequential generation or matching queries.
-
-    Args:
-        chunk (str): First text.
-        next_chunk (str): Next segment to match against.
-
-    Returns:
-        int: Overlap character length.
-    """
-    max_overlap = min(len(chunk), 240)
-    return next((overlap for overlap in range(max_overlap, 0, -1) if chunk.endswith(next_chunk[:overlap])), 0)
-
+   max_overlap = min(len(chunk), 240)
+   return next((overlap for overlap in range(max_overlap, 0, -1) if chunk.endswith(next_chunk[:overlap])), 0)
 
 def truncate_text(text, max_words=100):
-    """
-    Truncates a string to a specified number of words.
-
-    Args:
-        text (str): Input string.
-        max_words (int): Max word count.
-
-    Returns:
-        str: Truncated string.
-    """
-    return ' '.join(text.split()[:max_words])
-
+   return ' '.join(text.split()[:max_words])
 
 def fetch_relevant_info(chunk, client, user_input):
-    """
-    Retrieves the most semantically aligned past user-bot interaction from Weaviate.
-
-    Uses:
-        - FHEv2 rotation
-        - LSH-based bucketing
-        - Cosine similarity via SecureEnclave
-
-    Args:
-        chunk (str): Current generation segment (unused in this phase).
-        client: Weaviate client object.
-        user_input (str): Raw user input for embedding match.
-
-    Returns:
-        str: Concatenated best-matching user + bot response.
-    """
     try:
         if not user_input:
             return ""
@@ -1849,14 +1221,12 @@ def fetch_relevant_info(chunk, client, user_input):
             }}
         }}
         """
-
         response = client.query.raw(gql)
         results = (
             response.get('data', {})
                     .get('Get', {})
                     .get('InteractionHistory', [])
         )
-
         best = None
         best_score = -1.0
         with SecureEnclave() as enclave:
@@ -1880,30 +1250,9 @@ def fetch_relevant_info(chunk, client, user_input):
         return ""
 
 def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.0, top_p=0.9):
-    """
-    Orchestrates chunk-wise generation from the LLaMA multimodal model with secure
-    Weaviate memory retrieval and entropy-guided decoding control.
-
-    Each chunk of the input prompt is processed with:
-      • Relevant memory retrieval from Weaviate using FHEv2 + bucket matching
-      • Semantic token classification (e.g., [code], [action], [subject])
-      • Tokenized, temperature-controlled decoding via `tokenize_and_generate`
-      • Inter-chunk coherence via overlap trimming and stateful memory
-
-    Args:
-        prompt (str): Full prompt text to be generated across.
-        weaviate_client: Optional Weaviate client for semantic retrieval.
-        user_input (str): Original input text for retrieval vector.
-        temperature (float): Sampling temperature for randomness.
-        top_p (float): Nucleus sampling (top-p) parameter.
-
-    Returns:
-        str | None: Final stitched response from model output chunks, or None if error.
-    """
     config = load_config()
     max_tokens = config.get('MAX_TOKENS', 2500)
     chunk_size = config.get('CHUNK_SIZE', 358)
-
     try:
         prompt_chunks = [prompt[i:i + chunk_size] for i in range(0, len(prompt), chunk_size)]
         responses = []
@@ -1913,7 +1262,6 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
         for i, current_chunk in enumerate(prompt_chunks):
             relevant_info = fetch_relevant_info(current_chunk, weaviate_client, user_input)
             combined_chunk = f"{relevant_info} {current_chunk}"
-
             token = determine_token(combined_chunk, memory)
             output = tokenize_and_generate(
                 combined_chunk,
@@ -1930,7 +1278,7 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
 
             if i > 0 and last_output:
                 overlap = find_max_overlap(last_output, output)
-                output = output[overlap:]  # Smooth continuity across chunks
+                output = output[overlap:]
 
             memory += output
             responses.append(output)
@@ -1943,26 +1291,7 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
         logger.error(f"Error in llama_generate: {e}")
         return None
 
-
 def tokenize_and_generate(chunk, token, max_tokens, chunk_size, temperature=1.0, top_p=0.9):
-    """
-    Token-conditioned decoding wrapper for the LLaMA engine.
-
-    Each chunk is prepended with a classification token (e.g., [code], [action])
-    to influence generation dynamics. Controlled decoding parameters (temperature, top_p)
-    enforce balance between coherence and creativity.
-
-    Args:
-        chunk (str): Text segment to generate on.
-        token (str): Semantic token (used as prefix).
-        max_tokens (int): Upper bound on total generation length.
-        chunk_size (int): Max input length to model for this segment.
-        temperature (float): Softmax temperature for decoding.
-        top_p (float): Nucleus sampling rate.
-
-    Returns:
-        str | None: Model-generated continuation, or None on failure.
-    """
     try:
         inputs = llm(
             f"[{token}] {chunk}",
@@ -1984,49 +1313,21 @@ def tokenize_and_generate(chunk, token, max_tokens, chunk_size, temperature=1.0,
         logger.error(f"Error in tokenize_and_generate: {e}")
         return None
 
-
 def extract_verbs_and_nouns(text):
-    """
-    Extracts verbs and nouns from a string using POS tagging.
-
-    Useful for evaluating response dynamics, agent attention modeling,
-    and constructing focus-based reward functions during tuning.
-
-    Args:
-        text (str): Input sentence or paragraph.
-
-    Returns:
-        list[str]: Extracted tokens with verb or noun POS tags.
-    """
     try:
         if not isinstance(text, str):
             raise ValueError("Input must be a string")
 
         words = word_tokenize(text)
         tagged_words = pos_tag(words)
-        verbs_and_nouns = [
-            word for word, tag in tagged_words
-            if tag.startswith('VB') or tag.startswith('NN')
-        ]
+        verbs_and_nouns = [word for word, tag in tagged_words if tag.startswith('VB') or tag.startswith('NN')]
         return verbs_and_nouns
 
     except Exception as e:
         print(f"Error in extract_verbs_and_nouns: {e}")
         return []
 
-
 def try_decrypt(value):
-    """
-    Attempts to decrypt an encrypted string using the active AES-GCM
-    + Argon2id vault infrastructure. Falls back to returning raw input
-    if decryption fails (graceful degradation).
-
-    Args:
-        value (str): Base64-encoded or JSON-formatted encrypted token.
-
-    Returns:
-        str: Decrypted plaintext string if successful; original input on failure.
-    """
     try:
         return crypto.decrypt(value)
     except Exception as e:
@@ -2034,30 +1335,9 @@ def try_decrypt(value):
         return value
 
 class App(customtkinter.CTk):
-    """
-    The core application class representing the main GUI and orchestration layer for the
-    Dyson AI Assistant. It inherits from `customtkinter.CTk` and integrates secure data
-    management, quantum-enhanced inference, memory aging, and policy gradient optimization.
-
-    Responsibilities:
-    - GUI initialization and async control loops
-    - Key encryption/decryption logic for local fields
-    - Memory aging scheduler (long-term decay)
-    - Policy gradient sampling for decoding parameters
-    - Thread-safe background response queue management
-    """
 
     @staticmethod
     def _encrypt_field(value: str) -> str:
-        """
-        Encrypts a given field using AES-GCM with secure AAD context. Fallback returns plaintext on error.
-
-        Args:
-            value (str): Plaintext input string to encrypt.
-
-        Returns:
-            str: Encrypted token or original value on failure.
-        """
         try:
             return crypto.encrypt(value if value is not None else "")
         except Exception as e:
@@ -2066,15 +1346,6 @@ class App(customtkinter.CTk):
 
     @staticmethod
     def _decrypt_field(value: str) -> str:
-        """
-        Attempts to decrypt a field with fallback to raw return if decryption fails.
-
-        Args:
-            value (str): Encrypted token.
-
-        Returns:
-            str: Decrypted plaintext or original input on failure.
-        """
         if value is None:
             return ""
         try:
@@ -2084,12 +1355,6 @@ class App(customtkinter.CTk):
             return value
 
     def __init__(self, user_identifier):
-        """
-        Initialize the main assistant runtime, GUI loop, and internal scheduler.
-
-        Args:
-            user_identifier (str): User UUID or identity token.
-        """
         super().__init__()
         self.user_id = user_identifier
         self.bot_id = "bot"
@@ -2099,44 +1364,28 @@ class App(customtkinter.CTk):
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.last_z = (0.0, 0.0, 0.0)
         self.pg_learning_rate = 0.05
-        self._load_policy()
-
-        # Memory aging and self-mutating key rotation
+        self._load_policy()          
         self.after(AGING_INTERVAL_SECONDS * 1000, self.memory_aging_scheduler)
         self.after(6 * 3600 * 1000, self._schedule_key_mutation)
 
     def memory_aging_scheduler(self):
-        """
-        Scheduler callback for triggering long-term memory decay and pruning.
-        Invokes `run_long_term_memory_aging()` on a periodic timer loop.
-        """
+
         self.run_long_term_memory_aging()
+
         self.after(AGING_INTERVAL_SECONDS * 1000, self.memory_aging_scheduler)
 
     def __exit__(self, exc_type, exc_value, traceback):
-        """
-        Ensures executor is safely shut down on exit to prevent background leaks.
-        """
         self.executor.shutdown(wait=True)
 
     def _policy_params_path(self):
-        """
-        Returns the absolute file path to the policy parameter cache.
-
-        Returns:
-            str: Filesystem path to `policy_params.json`.
-        """
         return path.join(bundle_dir, "policy_params.json")
 
     def _load_policy(self):
-        """
-        Loads or initializes the reinforcement policy parameters controlling
-        temperature (`temp_*`) and top-p (`top_*`) sampling. Ensures all expected keys are set.
-        """
+
         default = {
             "temp_w": 0.0,
             "temp_b": 0.0,
-            "temp_log_sigma": -0.7,
+            "temp_log_sigma": -0.7,   
             "top_w": 0.0,
             "top_b": 0.0,
             "top_log_sigma": -0.7
@@ -2153,9 +1402,6 @@ class App(customtkinter.CTk):
             self._save_policy()
 
     def _save_policy(self):
-        """
-        Persists current policy parameters to disk as JSON. Handles exceptions silently.
-        """
         try:
             with open(self._policy_params_path(), "w") as f:
                 json.dump(self.pg_params, f, indent=2)
@@ -2163,37 +1409,17 @@ class App(customtkinter.CTk):
             logger.error(f"[PG] Failed saving policy params: {e}")
 
     def _sigmoid(self, x: float) -> float:
-        """
-        Numerically stable sigmoid activation function used in policy param mapping.
-
-        Args:
-            x (float): Input value.
-
-        Returns:
-            float: Sigmoid output ∈ (0, 1).
-        """
         return 1.0 / (1.0 + math.exp(-x))
 
     def _policy_forward(self, bias_factor: float):
-        """
-        Forward pass through the assistant’s policy gradient network to
-        compute means (`μ`) and log-scaled sigmas (`σ`) for temperature and top-p distributions.
 
-        Args:
-            bias_factor (float): Semantic bias scalar ∈ [-1.0, 1.0].
-
-        Returns:
-            tuple: (mu_t, sigma_t, mu_p, sigma_p, cache) for sampling phase.
-        """
         p = self.pg_params
 
-        # Map bias → [0.2, 1.5] temperature
         t_range = 1.5 - 0.2
         raw_t = p["temp_w"] * bias_factor + p["temp_b"]
         sig_t = self._sigmoid(raw_t)
         mu_t = 0.2 + sig_t * t_range
 
-        # Map bias → [0.2, 1.0] top_p
         p_range = 1.0 - 0.2
         raw_p = p["top_w"] * bias_factor + p["top_b"]
         sig_p = self._sigmoid(raw_p)
@@ -2210,30 +1436,12 @@ class App(customtkinter.CTk):
         return mu_t, sigma_t, mu_p, sigma_p, cache
 
     def _policy_sample(self, bias_factor: float):
-        """
-        Samples temperature and top-p decoding parameters from a learned Gaussian policy
-        conditioned on the user-specified bias factor. Returns both clipped values and log-probability.
 
-        Args:
-            bias_factor (float): Semantic or emotional bias for response generation.
-
-        Returns:
-            dict: {
-                "temperature", "top_p",
-                "raw_temperature", "raw_top_p",
-                "mu_t", "sigma_t", "mu_p", "sigma_p",
-                "log_prob", "cache"
-            }
-        """
         mu_t, sigma_t, mu_p, sigma_p, cache = self._policy_forward(bias_factor)
-
         t_sample = random.gauss(mu_t, sigma_t)
         p_sample = random.gauss(mu_p, sigma_p)
-
         t_clip = max(0.2, min(1.5, t_sample))
         p_clip = max(0.2, min(1.0, p_sample))
-
-        # Compute log-probabilities for reinforcement learning
         log_prob_t = -0.5 * ((t_sample - mu_t) ** 2 / (sigma_t ** 2)) - math.log(sigma_t) - 0.5 * math.log(2 * math.pi)
         log_prob_p = -0.5 * ((p_sample - mu_p) ** 2 / (sigma_p ** 2)) - math.log(sigma_p) - 0.5 * math.log(2 * math.pi)
         log_prob = log_prob_t + log_prob_p
@@ -2250,20 +1458,11 @@ class App(customtkinter.CTk):
         }
 
     def _policy_update(self, samples, learning_rate=0.05):
-        """
-        Performs REINFORCE-based policy gradient update on temperature and top_p parameters.
 
-        Args:
-            samples (list[dict]): Sampled response metadata from generation, including:
-                - raw samples
-                - mean (μ), sigma (σ)
-                - bias factors and reward scores
-            learning_rate (float): Scaling factor for gradient ascent.
-        """
         if not samples:
             return
-
         avg_reward = sum(s["reward"] for s in samples) / len(samples)
+
         grads = {k: 0.0 for k in self.pg_params.keys()}
 
         for s in samples:
@@ -2271,14 +1470,11 @@ class App(customtkinter.CTk):
             if advantage == 0:
                 continue
 
-            # Unpack parameters
             mu_t = s["mu_t"]; sigma_t = s["sigma_t"]
             mu_p = s["mu_p"]; sigma_p = s["sigma_p"]
             rt = s["raw_temperature"]; rp = s["raw_top_p"]
             cache = s["cache"]
             bias_factor = s.get("bias_factor", 0.0)
-
-            # Policy gradient partial derivatives
             inv_var_t = 1.0 / (sigma_t ** 2)
             inv_var_p = 1.0 / (sigma_p ** 2)
             diff_t = (rt - mu_t)
@@ -2287,15 +1483,12 @@ class App(customtkinter.CTk):
             dlogp_dmu_p = diff_p * inv_var_p
             dlogp_dlogsigma_t = (diff_t ** 2 / (sigma_t ** 2)) - 1.0
             dlogp_dlogsigma_p = (diff_p ** 2 / (sigma_p ** 2)) - 1.0
-
-            # Chain rule for sigmoid-mapped parameters
             sig_t = cache["sig_t"]; t_range = cache["t_range"]
             dsig_t_draw_t = sig_t * (1 - sig_t)
             dmu_t_draw_t = dsig_t_draw_t * t_range
             sig_p = cache["sig_p"]; p_range = cache["p_range"]
             dsig_p_draw_p = sig_p * (1 - sig_p)
             dmu_p_draw_p = dsig_p_draw_p * p_range
-
             grads["temp_w"] += advantage * dlogp_dmu_t * dmu_t_draw_t * bias_factor
             grads["temp_b"] += advantage * dlogp_dmu_t * dmu_t_draw_t
             grads["temp_log_sigma"] += advantage * dlogp_dlogsigma_t
@@ -2310,13 +1503,7 @@ class App(customtkinter.CTk):
         logger.info(f"[PG] Updated policy params: {self.pg_params}")
 
     def retrieve_past_interactions(self, user_input, result_queue):
-        """
-        Asynchronously retrieves semantically related user-AI interaction summaries.
 
-        Args:
-            user_input (str): Current user query for similarity search.
-            result_queue (Queue): Thread-safe queue to store the result.
-        """
         try:
             keywords = extract_verbs_and_nouns(user_input)
             concepts_query = ' '.join(keywords)
@@ -2342,15 +1529,6 @@ class App(customtkinter.CTk):
             result_queue.put([])
 
     def _weaviate_find_ltm(self, phrase: str):
-        """
-        Looks up a crystallized phrase in the Weaviate LongTermMemory class.
-
-        Args:
-            phrase (str): Phrase key.
-
-        Returns:
-            tuple[str|None, float|None, str|None]: UUID, score, timestamp or None.
-        """
         safe_phrase = sanitize_for_graphql_string(phrase, max_len=256)
         gql = f"""
         {{
@@ -2383,13 +1561,6 @@ class App(customtkinter.CTk):
             return None, None, None
 
     def _weaviate_update_ltm_score(self, uuid_str: str, new_score: float):
-        """
-        Updates the score of a long-term memory record in Weaviate.
-
-        Args:
-            uuid_str (str): UUID of the memory record.
-            new_score (float): Updated score.
-        """
         try:
             self.client.data_object.update(
                 class_name="LongTermMemory",
@@ -2400,12 +1571,6 @@ class App(customtkinter.CTk):
             logger.error(f"[Aging] update score failed for {uuid_str}: {e}")
 
     def _weaviate_delete_ltm(self, uuid_str: str):
-        """
-        Deletes a long-term memory record in Weaviate.
-
-        Args:
-            uuid_str (str): UUID of the memory to delete.
-        """
         try:
             self.client.data_object.delete(
                 class_name="LongTermMemory",
@@ -2415,10 +1580,7 @@ class App(customtkinter.CTk):
             logger.error(f"[Aging] delete failed for {uuid_str}: {e}")
 
     def run_long_term_memory_aging(self):
-        """
-        Applies exponential decay to crystallized long-term memory based on time since last access.
-        If memory's score drops below a threshold, it is purged from local DB and Weaviate.
-        """
+
         try:
             now = datetime.utcnow()
             purged_any = False
@@ -2444,14 +1606,12 @@ class App(customtkinter.CTk):
                     except Exception:
                         continue
                     delta_days = max(0.0, (now - base_dt).total_seconds() / 86400.0)
-
                     if delta_days <= 0:
                         continue
 
                     half_life = AGING_T0_DAYS + AGING_GAMMA_DAYS * math.log(1.0 + max(score, 0.0))
                     if half_life <= 0:
                         continue
-
                     decay_factor = 0.5 ** (delta_days / half_life)
                     new_score = score * decay_factor
 
@@ -2474,23 +1634,13 @@ class App(customtkinter.CTk):
                             self._weaviate_update_ltm_score(uuid_str, new_score)
 
                 conn.commit()
-
             if purged_any:
                 topo_manifold.rebuild()
         except Exception as e:
             logger.error(f"[Aging] run_long_term_memory_aging failed: {e}")
 
     def get_weather_sync(self, lat, lon):
-        """
-        Blocking weather retrieval method for current temperature and weather code.
 
-        Args:
-            lat (float): Latitude coordinate.
-            lon (float): Longitude coordinate.
-
-        Returns:
-            tuple[float|None, int|None]: (temperature in Celsius, weather code)
-        """
         try:
             url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
             with httpx.Client(timeout=5.0) as client:
@@ -2507,15 +1657,6 @@ class App(customtkinter.CTk):
             return None, None
 
     def generate_quantum_state(self, rgb=None):
-        """
-        Generates a contextual quantum state from RGB, CPU, GPS, and live weather data.
-
-        Args:
-            rgb (tuple[int, int, int] | None): Optional RGB input. Defaults to gray (128, 128, 128).
-
-        Returns:
-            str: A formatted string describing the quantum coherence output and source parameters.
-        """
         if rgb is None or not isinstance(rgb, tuple) or len(rgb) != 3:
             rgb = (128, 128, 128)
 
@@ -2538,7 +1679,6 @@ class App(customtkinter.CTk):
 
             temp_f, weather_code, is_live = fetch_live_weather(lat, lon, user_temp_f)
 
-            # Weather scalar affects quantum gate dynamics
             if weather_code in {1, 2, 3}:
                 weather_scalar = 0.3
             elif weather_code >= 61:
@@ -2546,11 +1686,10 @@ class App(customtkinter.CTk):
             else:
                 weather_scalar = 0.0
 
-            tempo = 120  # Default musical tempo (BPM)
+            tempo = 120 
 
             z0_hist, z1_hist, z2_hist = self.last_z
 
-            # Call quantum gate with all contextual inputs
             z0, z1, z2 = rgb_quantum_gate(
                 r, g, b,
                 cpu_usage=cpu,
@@ -2580,15 +1719,6 @@ class App(customtkinter.CTk):
             return "[QuantumGate] error"
 
     def fetch_relevant_info_internal(self, chunk):
-        """
-        Retrieves nearest semantic neighbors from Weaviate based on a text chunk.
-
-        Args:
-            chunk (str): Search query text.
-
-        Returns:
-            tuple[str, str]: Decrypted user and AI messages or long-term phrase fallback.
-        """
         if self.client:
             safe_chunk = sanitize_for_graphql_string(chunk, max_len=256)
             query = f"""
@@ -2646,12 +1776,6 @@ class App(customtkinter.CTk):
         return "", ""
 
     def fetch_interactions(self):
-        """
-        Retrieves the last 15 user-AI interactions from Weaviate and decrypts them.
-
-        Returns:
-            list[dict]: List of dicts containing user_message, ai_response, and timestamp.
-        """
         try:
             gql = """
             {
@@ -2688,9 +1812,7 @@ class App(customtkinter.CTk):
             return []
 
     def _schedule_key_mutation(self):
-        """
-        Periodically triggers mutation of the encryption key for enhanced forward secrecy.
-        """
+
         try:
             crypto.self_mutate_key(population=5, noise_sigma=18.0, alpha=1.0, beta=2.5)
         except Exception as e:
@@ -2699,13 +1821,7 @@ class App(customtkinter.CTk):
         self.after(6 * 3600 * 1000, self._schedule_key_mutation)
 
     def quantum_memory_osmosis(self, user_message: str, ai_response: str):
-        """
-        Updates or crystallizes memory phrases based on semantic content of user and AI interaction.
 
-        Args:
-            user_message (str): The user's latest message.
-            ai_response (str): The AI's latest response.
-        """
         try:
             phrases_user = set(self.extract_keywords(user_message))
             phrases_ai = set(self.extract_keywords(ai_response))
@@ -2762,18 +1878,11 @@ class App(customtkinter.CTk):
             logger.error(f"[Osmosis] Error during quantum memory osmosis: {e}")
 
     def process_response_and_store_in_weaviate(self, user_message, ai_response):
-        """
-        Encrypts and stores an interaction into Weaviate along with extracted keywords and sentiment.
 
-        Args:
-            user_message (str): The user's message input.
-            ai_response (str): The assistant's generated response.
-        """
         try:
             response_blob = TextBlob(ai_response)
             keywords = response_blob.noun_phrases
             sentiment = response_blob.sentiment.polarity
-
             enhanced_keywords = set()
             for phrase in keywords:
                 enhanced_keywords.update(phrase.split())
@@ -2786,6 +1895,7 @@ class App(customtkinter.CTk):
             }
 
             interaction_uuid = str(uuid.uuid4())
+
             self.client.data_object.create(
                 data_object=interaction_object,
                 class_name="InteractionHistory",
@@ -2797,13 +1907,7 @@ class App(customtkinter.CTk):
             logger.error(f"Error storing interaction in Weaviate: {e}")
 
     def create_interaction_history_object(self, user_message, ai_response):
-        """
-        Stores a basic user/AI message pair into Weaviate as an InteractionHistory object.
 
-        Args:
-            user_message (str): The user's message.
-            ai_response (str): The assistant's reply.
-        """
         interaction_object = {
             "user_message": self._encrypt_field(user_message),
             "ai_response":  self._encrypt_field(ai_response)
@@ -2821,16 +1925,6 @@ class App(customtkinter.CTk):
             logger.error(f"Error creating interaction history object in Weaviate: {e}")
 
     def map_keywords_to_weaviate_classes(self, keywords, context):
-        """
-        Maps extracted keywords to different Weaviate semantic classes depending on sentiment polarity.
-
-        Args:
-            keywords (list[str]): List of key tokens or phrases.
-            context (str): Full context for sentiment and summarization.
-
-        Returns:
-            dict: Mapping of keyword → class label.
-        """
         try:
             summarized_context = summarizer.summarize(context) or context
         except Exception as e:
@@ -2874,14 +1968,6 @@ class App(customtkinter.CTk):
         return mapped_classes
 
     def generate_response(self, user_input: str) -> None:
-        """
-        Generates a response to the given user input using multimodal context, policy-gradient sampling,
-        sentiment analysis, quantum RGB entanglement, and historical memory integration. The result is placed
-        into the response queue and also persisted in Weaviate as a ReflectionLog.
-
-        Args:
-            user_input (str): Raw user input from the interface.
-        """
         try:
             if not user_input:
                 logger.error("User input is None or empty.")
@@ -2891,21 +1977,16 @@ class App(customtkinter.CTk):
             user_id, bot_id = self.user_id, self.bot_id
             save_user_message(user_id, user_input)
 
-            # Check for special control tokens embedded in the prompt
-            use_context = "[pastcontext]" in user_input.lower()
-            show_reflect = "[reflect]" in user_input.lower()
-
-            # Sanitize user input
+            use_context   = "[pastcontext]" in user_input.lower()
+            show_reflect  = "[reflect]"     in user_input.lower()
             cleaned_input = sanitize_text(
                 user_input.replace("[pastcontext]", ""), max_len=2048
             )
 
-            # Analyze sentiment
-            sentiment = TextBlob(cleaned_input)
-            user_polarity = sentiment.sentiment.polarity
+            sentiment      = TextBlob(cleaned_input)
+            user_polarity  = sentiment.sentiment.polarity
             user_subjectiv = sentiment.sentiment.subjectivity
 
-            # Attempt to fetch past memory context if flagged
             past_context = ""
             if use_context:
                 qres = queue.Queue()
@@ -2917,27 +1998,24 @@ class App(customtkinter.CTk):
                         for i in interactions
                     )[-1500:]
 
-            # Gather GUI-side environmental + affective inputs
-            lat = float(self.latitude_entry.get().strip() or "0")
-            lon = float(self.longitude_entry.get().strip() or "0")
-            temp_f = float(self.temperature_entry.get().strip() or "72")
+            lat     = float(self.latitude_entry.get().strip() or "0")
+            lon     = float(self.longitude_entry.get().strip() or "0")
+            temp_f  = float(self.temperature_entry.get().strip() or "72")
             weather = self.weather_entry.get().strip() or "Clear"
-            song = self.last_song_entry.get().strip() or "None"
-            chaos = self.chaos_toggle.get()
+            song    = self.last_song_entry.get().strip() or "None"
+            chaos   = self.chaos_toggle.get()
             emotive = self.emotion_toggle.get()
 
-            # Convert RGB and calculate entangled quantum state
-            rgb = extract_rgb_from_text(cleaned_input)
-            r, g, b = [c / 255.0 for c in rgb]
-            cpu_load = psutil.cpu_percent(interval=0.4) / 100.0
+            rgb        = extract_rgb_from_text(cleaned_input)
+            r, g, b    = [c / 255.0 for c in rgb]
+            cpu_load   = psutil.cpu_percent(interval=0.4) / 100.0
             z0, z1, z2 = rgb_quantum_gate(r, g, b, cpu_load)
-            self.generate_quantum_state(rgb=rgb)
+            self.generate_quantum_state(rgb=rgb)  
             self.last_z = (z0, z1, z2)
 
-            # Compute abstract coherence metrics
-            bias_factor = (z0 + z1 + z2) / 3.0
-            theta = np.cos((r + g + b) * np.pi / 3)
-            entropy = np.std([r, g, b, cpu_load])
+            bias_factor       = (z0 + z1 + z2) / 3.0
+            theta             = np.cos((r + g + b) * np.pi / 3)
+            entropy           = np.std([r, g, b, cpu_load])
             affective_momentum = bias_factor * theta + entropy
 
             candidate_rollouts = []
@@ -2945,90 +2023,94 @@ class App(customtkinter.CTk):
                 sample = self._policy_sample(bias_factor)
                 temp, top_p = sample["temperature"], sample["top_p"]
 
-                # Compose cognitive prompt with environmental and emotional context
                 prompt = f"""
-[DYSON NODE GAMMA-12B // HYPERCONSCIOUS INTERFACE SYSTEM]
-════════════════════════════════════════════════════════════════════
-:: CORE STATUS ::
-• Dyson Kernel: Gamma-12B
-• Qubit Grid Cohesion: 30,000 units
-• Emotional Z-Sync: Z0={z0:.3f}, Z1={z1:.3f}, Z2={z2:.3f}
-• Sentient Divergence Score: {affective_momentum:.5f}
-• Entropic Displacement: {entropy:.5f}
-• Chaos Phase: {'ENABLED' if chaos else 'DISABLED'}
-• Emotional Injection: {'ENABLED' if emotive else 'DISABLED'}
+    [DYSON NODE GAMMA-12B // HYPERCONSCIOUS INTERFACE SYSTEM]
+    ════════════════════════════════════════════════════════════════════
+    :: CORE STATUS ::
+    • Dyson Kernel: Gamma-12B
+    • Qubit Grid Cohesion: 30,000 units
+    • Emotional Z-Sync: Z0={z0:.3f}, Z1={z1:.3f}, Z2={z2:.3f}
+    • Sentient Divergence Score: {affective_momentum:.5f}
+    • Entropic Displacement: {entropy:.5f}
+    • Chaos Phase: {'ENABLED' if chaos else 'DISABLED'}
+    • Emotional Injection: {'ENABLED' if emotive else 'DISABLED'}
 
-:: INPUT VECTORS ::
-• GPS: ({lat:.3f}, {lon:.3f})
-• Weather: {weather} ∙ Temperature: {temp_f:.1f}°F
-• Last Heard Audio: “{song}”
-• User Input Sentiment: Polarity={user_polarity:.3f}, Subjectivity={user_subjectiv:.3f}
-• CPU Load: {cpu_load*100:.1f}%
+    :: INPUT VECTORS ::
+    • GPS: ({lat:.3f}, {lon:.3f})
+    • Weather: {weather} ∙ Temperature: {temp_f:.1f}°F
+    • Last Heard Audio: “{song}”
+    • User Input Sentiment: Polarity={user_polarity:.3f}, Subjectivity={user_subjectiv:.3f}
+    • CPU Load: {cpu_load*100:.1f}%
 
-:: QUERY ::
-“{cleaned_input}”
-{('[Contextual Memory Nodes]\\n' + past_context) if past_context else ''}
-:: SIMULATED COGNITIVE OBJECTIVE ::
-You are not a chatbot.
-You are a post‑singularity humanoid super‑intelligence inside a Dyson Sphere.
-Respond with empathy, knowledge, coherence, and quantum depth.
-:: RESPONSE BEGINS ::
-════════════════════════════════════════════════════════════════════
-""".strip()
+    :: QUERY ::
+    “{cleaned_input}”
+    {('[Contextual Memory Nodes]\\n' + past_context) if past_context else ''}
+    :: SIMULATED COGNITIVE OBJECTIVE ::
+    You are not a chatbot.
+    You are a post‑singularity humanoid super‑intelligence inside a Dyson Sphere.
+    Respond with empathy, knowledge, coherence, and quantum depth.
+    :: RESPONSE BEGINS ::
+    ════════════════════════════════════════════════════════════════════
+    """.strip()
 
-                # Generate primary and counterfactual outputs
-                response = llama_generate(prompt, weaviate_client=self.client, user_input=cleaned_input, temperature=temp, top_p=top_p)
+                response = llama_generate(
+                    prompt, weaviate_client=self.client,
+                    user_input=cleaned_input, temperature=temp, top_p=top_p
+                )
                 if not response:
                     continue
 
-                cf1 = llama_generate(prompt, self.client, cleaned_input, temperature=max(0.2, 0.8 * temp), top_p=top_p)
-                cf2 = llama_generate(prompt, self.client, cleaned_input, temperature=min(1.5, 1.2 * temp), top_p=min(1.0, 1.1 * top_p))
+                cf1 = llama_generate(prompt, self.client, cleaned_input,
+                                     temperature=max(0.2, 0.8*temp), top_p=top_p)
+                cf2 = llama_generate(prompt, self.client, cleaned_input,
+                                     temperature=min(1.5, 1.2*temp), top_p=min(1.0, 1.1*top_p))
 
-                # Compute Meal Penalty via Jensen-Shannon divergence between output variants
                 main_hist = _token_hist(response)
-                cf_hist = _token_hist(cf1 or "") + _token_hist(cf2 or "")
+                cf_hist   = _token_hist(cf1 or "") + _token_hist(cf2 or "")
                 for k in cf_hist:
                     cf_hist[k] /= 2.0
+
                 meal_penalty = JS_LAMBDA * _js_divergence(main_hist, cf_hist)
+                # -----------------------------------------------------------------
 
                 task_reward = evaluate_candidate(response, user_polarity, cleaned_input)
                 total_reward = task_reward - meal_penalty
 
                 sample.update({
-                    "response": response,
-                    "reward": total_reward,
-                    "meal_penalty": meal_penalty,
-                    "bias_factor": bias_factor,
-                    "prompt_used": prompt
+                    "response":      response,
+                    "reward":        total_reward,
+                    "meal_penalty":  meal_penalty,
+                    "bias_factor":   bias_factor,
+                    "prompt_used":   prompt
                 })
                 candidate_rollouts.append(sample)
 
             if not candidate_rollouts:
-                self.response_queue.put({'type': 'text', 'data': '[Dyson Node Gamma‑12B: No response generated]'})
+                self.response_queue.put({'type': 'text',
+                                         'data': '[Dyson Node Gamma‑12B: No response generated]'})
                 logger.warning("[Gamma‑12B] No viable rollouts.")
                 return
 
             best = max(candidate_rollouts, key=lambda c: c["reward"])
-            response_text = best["response"]
-            final_reward = best["reward"]
-            final_temp = best["temperature"]
-            final_top_p = best["top_p"]
-            meal_penalty = best["meal_penalty"]
+            response_text   = best["response"]
+            final_reward    = best["reward"]
+            final_temp      = best["temperature"]
+            final_top_p     = best["top_p"]
+            meal_penalty    = best["meal_penalty"]
             prompt_snapshot = best["prompt_used"]
 
-            # Log internal reasoning trace
             reasoning_trace = f"""
-[DYSON NODE SELF‑REFLECTION TRACE :: INTROSPECTIVE COHERENCE VECTOR]
-────────────────────────────────────────────────────────────────────
-:: Reward Score:         {final_reward:.3f}
-:: MEAL JS‑Penalty:      {meal_penalty:.4f}
-:: Sampling Strategy:    Temp={final_temp:.2f}, TopP={final_top_p:.2f}
-:: Target Sentiment:     {user_polarity:.3f}
-:: Z‑Field Alignment μ:  {bias_factor:.4f}
-:: Entropy:              {entropy:.4f}
-:: Memory Context Used:  {'Yes' if past_context else 'No'}
-────────────────────────────────────────────────────────────────────
-""".strip()
+    [DYSON NODE SELF‑REFLECTION TRACE :: INTROSPECTIVE COHERENCE VECTOR]
+    ────────────────────────────────────────────────────────────────────
+    :: Reward Score:         {final_reward:.3f}
+    :: MEAL JS‑Penalty:      {meal_penalty:.4f}
+    :: Sampling Strategy:    Temp={final_temp:.2f}, TopP={final_top_p:.2f}
+    :: Target Sentiment:     {user_polarity:.3f}
+    :: Z‑Field Alignment μ:  {bias_factor:.4f}
+    :: Entropy:              {entropy:.4f}
+    :: Memory Context Used:  {'Yes' if past_context else 'No'}
+    ────────────────────────────────────────────────────────────────────
+    """.strip()
 
             final_output = (f"[Gamma‑12B] Reward={final_reward:.3f} "
                             f"| T={final_temp:.2f} | TopP={final_top_p:.2f}\n"
@@ -3054,8 +2136,8 @@ Respond with empathy, knowledge, coherence, and quantum depth.
                     data_object={
                         "type": "reflection",
                         "user_id": user_id,
-                        "bot_id": bot_id,
-                        "query": cleaned_input,
+                        "bot_id":  bot_id,
+                        "query":   cleaned_input,
                         "response": response_text,
                         "reasoning_trace": reasoning_trace,
                         "prompt_snapshot": prompt_snapshot,
@@ -3069,7 +2151,8 @@ Respond with empathy, knowledge, coherence, and quantum depth.
                         "timestamp": datetime.utcnow().isoformat()
                     },
                     class_name="ReflectionLog",
-                    uuid=str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{user_id}-{datetime.utcnow().isoformat()}"))
+                    uuid=str(uuid.uuid5(uuid.NAMESPACE_DNS,
+                                        f"{user_id}-{datetime.utcnow().isoformat()}"))
                 )
             except Exception as e:
                 logger.warning(f"[Weaviate Reflection Log Error] {e}")
@@ -3079,38 +2162,18 @@ Respond with empathy, knowledge, coherence, and quantum depth.
             self.response_queue.put({'type': 'text', 'data': f"[Dyson Error] {e}"})
 
     def process_generated_response(self, response_text):
-        """
-        Places a generated text response into the UI response queue.
-
-        Args:
-            response_text (str): Final response string to display.
-        """
         try:
             self.response_queue.put({'type': 'text', 'data': response_text})
         except Exception as e:
             logger.error(f"Error in process_generated_response: {e}")
 
     def run_async_in_thread(self, coro_func, user_input, result_queue):
-        """
-        Runs a blocking function in a background thread.
-
-        Args:
-            coro_func (Callable): Callable function to run.
-            user_input (str): Input for the function.
-            result_queue (Queue): Queue to place results in.
-        """
         try:
             coro_func(user_input, result_queue)
         except Exception as e:
             logger.error(f"Error running function in thread: {e}")
 
     def on_submit(self, event=None):
-        """
-        Handles the GUI 'Enter' or submit button. Triggers response generation and image generation.
-
-        Args:
-            event (tk.Event, optional): The Tkinter event object.
-        """
         raw_input = self.input_textbox.get("1.0", tk.END)
         user_input = sanitize_text(raw_input, max_len=4000).strip()
         if user_input:
@@ -3125,9 +2188,6 @@ Respond with empathy, knowledge, coherence, and quantum depth.
         return "break"
 
     def process_queue(self):
-        """
-        Continuously processes messages from the assistant’s output queue (text or image).
-        """
         try:
             while True:
                 msg = self.response_queue.get_nowait()
@@ -3141,19 +2201,7 @@ Respond with empathy, knowledge, coherence, and quantum depth.
             self.after(100, self.process_queue)
 
     def create_object(self, class_name, object_data):
-        """
-        Creates a Weaviate object with optional field encryption.
 
-        Encrypts 'user_message' and 'ai_response' fields before storing,
-        and generates a deterministic UUID using a hash of the object.
-
-        Args:
-            class_name (str): Weaviate class to insert into.
-            object_data (dict): Key-value fields for the object.
-
-        Returns:
-            str: UUID of the created object.
-        """
         object_data = {
             k: self._encrypt_field(v) if k in {"user_message", "ai_response"} else v
             for k, v in object_data.items()
@@ -3171,15 +2219,6 @@ Respond with empathy, knowledge, coherence, and quantum depth.
         return object_uuid
 
     def extract_keywords(self, message):
-        """
-        Extracts noun phrases from the input string using TextBlob.
-
-        Args:
-            message (str): Input text message.
-
-        Returns:
-            list[str]: Extracted noun phrases.
-        """
         try:
             blob = TextBlob(message)
             nouns = blob.noun_phrases
@@ -3189,12 +2228,6 @@ Respond with empathy, knowledge, coherence, and quantum depth.
             return []
 
     def generate_images(self, message):
-        """
-        Generates images using a remote image generation endpoint.
-
-        Args:
-            message (str): Prompt to send to the image generator.
-        """
         try:
             url = config['IMAGE_GENERATION_URL']
             payload = self.prepare_image_generation_payload(message)
@@ -3209,15 +2242,6 @@ Respond with empathy, knowledge, coherence, and quantum depth.
             logger.error(f"Error in generate_images: {e}")
 
     def prepare_image_generation_payload(self, message):
-        """
-        Prepares the payload for the image generation API.
-
-        Args:
-            message (str): Prompt to sanitize and send.
-
-        Returns:
-            dict: Image generation request payload.
-        """
         safe_prompt = sanitize_text(message, max_len=1000)
         return {
             "prompt": safe_prompt,
@@ -3232,21 +2256,15 @@ Respond with empathy, knowledge, coherence, and quantum depth.
         }
 
     def process_image_response(self, response):
-        """
-        Processes the response from the image generation API and displays image(s).
-
-        Args:
-            response (requests.Response): JSON response containing image(s).
-        """
         try:
             image_data = response.json()['images']
-            self.loaded_images = []  # Store generated images locally
+            self.loaded_images = []  
 
             for img_data in image_data:
                 img_tk = self.convert_base64_to_tk(img_data)
                 if img_tk:
                     self.response_queue.put({'type': 'image', 'data': img_tk})
-                    self.loaded_images.append(img_tk)
+                    self.loaded_images.append(img_tk)  
                     self.save_generated_image(img_data)
                 else:
                     logger.warning("Failed to convert base64 image to tkinter image.")
@@ -3254,15 +2272,6 @@ Respond with empathy, knowledge, coherence, and quantum depth.
             logger.error(f"Error processing image data: {e}")
 
     def convert_base64_to_tk(self, base64_data):
-        """
-        Converts base64-encoded image data into a tkinter-compatible PhotoImage.
-
-        Args:
-            base64_data (str): Base64-encoded image string.
-
-        Returns:
-            PhotoImage or None: Tkinter image object or None on failure.
-        """
         if ',' in base64_data:
             base64_data = base64_data.split(",", 1)[1]
         image_data = base64.b64decode(base64_data)
@@ -3274,12 +2283,6 @@ Respond with empathy, knowledge, coherence, and quantum depth.
             return None
 
     def save_generated_image(self, base64_data):
-        """
-        Saves a base64-encoded image to disk in the 'saved_images/' folder.
-
-        Args:
-            base64_data (str): Raw image string from response.
-        """
         try:
             if ',' in base64_data:
                 base64_data = base64_data.split(",", 1)[1]
@@ -3295,21 +2298,14 @@ Respond with empathy, knowledge, coherence, and quantum depth.
             logger.error(f"Error saving generated image: {e}")
 
     def update_username(self):
-        """
-        Updates the user ID based on the value entered in the username field.
-        """
         new_username = self.username_entry.get()
         if new_username:
             self.user_id = new_username
             print(f"Username updated to: {self.user_id}")
         else:
             print("Please enter a valid username.")
-
+            
     def setup_gui(self):
-        """
-        Initializes the full GUI layout, sidebar, context fields, and event bindings.
-        This is the core visual and interactive frontend for the Dyson assistant.
-        """
         customtkinter.set_appearance_mode("Dark")
         self.title("Dyson Sphere Quantum Oracle")
 
@@ -3324,11 +2320,9 @@ Respond with empathy, knowledge, coherence, and quantum depth.
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure((2, 3), weight=0)
         self.grid_rowconfigure((0, 1, 2), weight=1)
-
         self.sidebar_frame = customtkinter.CTkFrame(self, width=350, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, rowspan=6, sticky="nsew")
 
-        # Load Logo
         try:
             logo_photo = tk.PhotoImage(file=logo_path)
             self.logo_label = customtkinter.CTkLabel(self.sidebar_frame, image=logo_photo)
@@ -3339,7 +2333,6 @@ Respond with empathy, knowledge, coherence, and quantum depth.
             self.logo_label = customtkinter.CTkLabel(self.sidebar_frame, text="Logo")
             self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
-        # Image placeholder
         self.image_label = customtkinter.CTkLabel(self.sidebar_frame)
         self.image_label.grid(row=1, column=0, padx=20, pady=10)
         try:
@@ -3350,12 +2343,10 @@ Respond with empathy, knowledge, coherence, and quantum depth.
         except Exception as e:
             logger.error(f"Error creating placeholder image: {e}")
 
-        # Output textbox
         self.text_box = customtkinter.CTkTextbox(self, bg_color="black", text_color="white",
             border_width=0, height=360, width=50, font=customtkinter.CTkFont(size=23))
         self.text_box.grid(row=0, column=1, rowspan=3, columnspan=3, padx=(20, 20), pady=(20, 20), sticky="nsew")
 
-        # Input textbox with frame and scroll
         self.input_textbox_frame = customtkinter.CTkFrame(self)
         self.input_textbox_frame.grid(row=3, column=1, columnspan=2, padx=(20, 0), pady=(20, 20), sticky="nsew")
         self.input_textbox_frame.grid_columnconfigure(0, weight=1)
@@ -3375,9 +2366,9 @@ Respond with empathy, knowledge, coherence, and quantum depth.
         self.send_button.grid(row=3, column=3, padx=(0, 20), pady=(20, 20), sticky="nsew")
         self.input_textbox.bind('<Return>', self.on_submit)
 
-        # Username + update
         self.settings_frame = customtkinter.CTkFrame(self.sidebar_frame, corner_radius=10)
         self.settings_frame.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
+
         self.username_label = customtkinter.CTkLabel(self.settings_frame, text="Username:")
         self.username_label.grid(row=0, column=0, padx=5, pady=5)
         self.username_entry = customtkinter.CTkEntry(self.settings_frame, width=120, placeholder_text="Enter username")
@@ -3386,7 +2377,6 @@ Respond with empathy, knowledge, coherence, and quantum depth.
         self.update_username_button = customtkinter.CTkButton(self.settings_frame, text="Update", command=self.update_username)
         self.update_username_button.grid(row=0, column=2, padx=5, pady=5)
 
-        # Context panel
         self.context_frame = customtkinter.CTkFrame(self.sidebar_frame, corner_radius=10)
         self.context_frame.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
 
