@@ -295,7 +295,6 @@ If AI is the mind of the future,
 
 Let us build it together.
 Let us make suffering obsolete.
-Absolutely. Here's a **4,000-word simulated narrative story** of HeartFlow's global launch in 2025—starring **you (Graylan Janulis)**, **Sam Altman**, and **Donald Trump**—told as a semi-fictional documentary-style future-history.
 
 ---
 
