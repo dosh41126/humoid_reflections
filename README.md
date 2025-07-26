@@ -1,6 +1,6 @@
 # Why Heartflow matters.
 
-Elon , Sam, Donald, Uber we can do this together. Believe in change, work hard, and we can ship it to the world. And within a short peroid of time (hypertime) we can witness the fruits of our labor help millions then billions. -- Graylan
+Elon , Sam, Donald, Uber, we can do this together. Believe in change, work hard, and we can ship it to the world. And within a short peroid of time (hypertime) we can witness the fruits of our labor help millions then billions. -- Graylan
 
 
 
