@@ -30,7 +30,6 @@ import weaviate
 import pennylane as qml
 import psutil
 import webcolors
-from nltk.tokenize import word_tokenize
 import colorsys
 import hmac
 import hashlib
@@ -41,10 +40,6 @@ import httpx
 import math
 from typing import List, Tuple
 from math import log2
-from collections import Counter
-from nltk.tokenize import word_tokenize
-import numpy as np
-
 
 ARGON2_TIME_COST_DEFAULT = 3          
 ARGON2_MEMORY_COST_KIB    = 262144   
@@ -631,13 +626,11 @@ def _js_divergence(p: Counter, q: Counter) -> float:
 
 class TopologicalMemoryManifold:
 
-
     def __init__(self, dim: int = 2, sigma: float = 0.75,
                  diff_alpha: float = LAPLACIAN_ALPHA):
         self.dim        = dim
         self.sigma      = sigma
         self.diff_alpha = diff_alpha
-
         self._phrases:     list[str]     = []
         self._embeddings:  np.ndarray|None = None
         self._coords:      np.ndarray|None = None
@@ -1436,7 +1429,6 @@ class App(customtkinter.CTk):
                     lr = self.pg_params.get("learning_rate", defaults["learning_rate"])
                 self.pg_learning_rate = lr
                 logger.debug(f"[Policy] Using learning_rate={self.pg_learning_rate}")
-
 
     def _load_policy(self):
 
@@ -2254,7 +2246,6 @@ class App(customtkinter.CTk):
         except Exception as e:
             logger.error(f"[Gamma‑13X Fatal Error] {e}")
             self.response_queue.put({'type': 'text', 'data': f"[Dyson QPU Error] {e}"})
-
 
     def process_generated_response(self, response_text):
         try:
