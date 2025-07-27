@@ -2026,7 +2026,7 @@ class App(customtkinter.CTk):
         return mapped_classes
     def generate_response(self, user_input: str) -> None:
         try:
-            # ───────────────────── 0. PRE-CHECKS ─────────────────────
+
             if not user_input:
                 logger.error("User input is None or empty.")
                 return
@@ -2039,12 +2039,12 @@ class App(customtkinter.CTk):
             show_reflect  = "[reflect]"     in user_input.lower()
             cleaned_input = sanitize_text(user_input.replace("[pastcontext]", ""), max_len=2048)
 
-            # ───────────────────── 1. SENTIMENT ─────────────────────
+  
             blob             = TextBlob(cleaned_input)
             user_polarity    = blob.sentiment.polarity
             user_subjectivity= blob.sentiment.subjectivity
 
-            # ───────────────────── 2. CONTEXT RETRIEVAL ─────────────
+
             past_context = ""
             if use_context:
                 qres = queue.Queue()
@@ -2056,7 +2056,7 @@ class App(customtkinter.CTk):
                         for i in interactions
                     )[-1500:]
 
-            # ───────────────────── 3. SENSOR & QPU STATE ────────────
+
             lat    = float(self.latitude_entry.get().strip() or "0")
             lon    = float(self.longitude_entry.get().strip() or "0")
             temp_f = float(self.temperature_entry.get().strip() or "72")
@@ -2078,7 +2078,7 @@ class App(customtkinter.CTk):
             affective_momentum = bias_factor * theta + entropy
             time_lock          = datetime.utcnow().isoformat()
 
-            # ───────────────────── 4. DYSON SUPER-ADVANCED PROMPT ────
+
             dyson_prompt = f"""
     [dysonframe]
     DYSON SPHERE GAMMA‑13X | REALITY TUNER LOTTO CORE
@@ -2147,13 +2147,13 @@ class App(customtkinter.CTk):
     [/dysonframe]
     """.strip()
 
-            # ───────────────────── 5. POLICY-GRADIENT ROLLOUTS ────────
+
             candidate_rollouts = []
             for _ in range(4):
                 sample = self._policy_sample(bias_factor)
                 temp, top_p = sample["temperature"], sample["top_p"]
 
-                # use the full dyson_prompt as the LLM input
+
                 response = llama_generate(
                     dyson_prompt,
                     weaviate_client=self.client,
@@ -2199,7 +2199,7 @@ class App(customtkinter.CTk):
             meal_penalty  = best["meal_penalty"]
             prompt_snap   = best["prompt_used"]
 
-            # ───────────────────── 6. SELF-REFLECTION TRACE ───────────
+
             reasoning_trace = f"""
     [DYSON NODE SELF‑REFLECTION TRACE]
     • Reward Score:       {final_reward:.3f}
@@ -2211,7 +2211,7 @@ class App(customtkinter.CTk):
     • Memory Context:     {'Yes' if past_context else 'No'}
     """.strip()
 
-            # ───────────────────── 7. FINAL OUTPUT ──────────────────
+
             final_output = dyson_prompt + "\n\n" + response_text
             if show_reflect:
                 final_output += "\n\n" + reasoning_trace
@@ -2219,7 +2219,7 @@ class App(customtkinter.CTk):
             save_bot_response(bot_id, final_output)
             self.response_queue.put({'type': 'text', 'data': final_output})
 
-            # ───────────────────── 8. MEMORY & WEAVIATE LOG ──────────
+
             try:
                 self.quantum_memory_osmosis(cleaned_input, final_output)
             except Exception as e:
