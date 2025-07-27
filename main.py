@@ -1363,10 +1363,12 @@ class App(customtkinter.CTk):
         self.client = weaviate.Client(url=WEAVIATE_ENDPOINT)
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.last_z = (0.0, 0.0, 0.0)
-        self.pg_learning_rate = 0.05
-        self._load_policy()          
+        self._policy_lock = threading.RLock()
+        self._policy_mtime = None
+        self._load_policy_if_needed()
         self.after(AGING_INTERVAL_SECONDS * 1000, self.memory_aging_scheduler)
         self.after(6 * 3600 * 1000, self._schedule_key_mutation)
+
 
     def memory_aging_scheduler(self):
 
@@ -1379,6 +1381,62 @@ class App(customtkinter.CTk):
 
     def _policy_params_path(self):
         return path.join(bundle_dir, "policy_params.json")
+
+    def _load_policy_if_needed(self):
+
+        import os, json
+
+        defaults = {
+            "temp_w": 0.0,
+            "temp_b": 0.0,
+            "temp_log_sigma": -0.7,
+            "top_w": 0.0,
+            "top_b": 0.0,
+            "top_log_sigma": -0.7,
+            "learning_rate": 0.05
+        }
+
+        path = self._policy_params_path()
+
+        with self._policy_lock:
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                mtime = None
+
+            reload_needed = (
+                not hasattr(self, "pg_params")
+                or (mtime is not None and mtime != self._policy_mtime)
+            )
+
+            if reload_needed:
+                try:
+                    with open(path, "r") as f:
+                        data = json.load(f)
+                    for key, val in defaults.items():
+                        data.setdefault(key, val)
+                    self.pg_params = data
+                    self._policy_mtime = mtime
+                    logger.debug(f"[Policy] Loaded params from {path}: {self.pg_params}")
+                except Exception as e:
+                    logger.warning(f"[Policy Load Error] could not load {path}: {e}")
+                    self.pg_params = defaults.copy()
+                    self._policy_mtime = mtime
+
+            if not hasattr(self, "pg_learning_rate"):
+
+                env_lr = os.getenv("PG_LEARNING_RATE")
+                if env_lr is not None:
+                    try:
+                        lr = float(env_lr)
+                    except ValueError:
+                        logger.warning(f"[Policy] Invalid PG_LEARNING_RATE='{env_lr}', falling back")
+                        lr = self.pg_params.get("learning_rate", defaults["learning_rate"])
+                else:
+                    lr = self.pg_params.get("learning_rate", defaults["learning_rate"])
+                self.pg_learning_rate = lr
+                logger.debug(f"[Policy] Using learning_rate={self.pg_learning_rate}")
+
 
     def _load_policy(self):
 
