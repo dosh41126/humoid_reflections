@@ -87,7 +87,6 @@ def download_nltk_data():
     except Exception as e:
         print(f"Error downloading NLTK data: {e}")
 
-
 download_nltk_data()
         
 client = weaviate.Client(
@@ -343,7 +342,6 @@ class SecureKeyManager:
             os.makedirs("secure", exist_ok=True)
         if os.path.exists(self.vault_path):
             return
-
 
         salt          = os.urandom(16)
         master_secret = os.urandom(32) 
@@ -818,6 +816,27 @@ def is_valid_uuid(uuid_to_test, version=5):
     except ValueError:
         return False
     
+def get_cpu_ram_usage():
+    return psutil.cpu_percent(), psutil.virtual_memory().percent
+
+dev_scalar = qml.device("default.qubit", wires=5)
+@qml.qnode(dev_scalar)
+def quantum_scalar_state(cpu_usage, ram_usage):
+    cpu_param = cpu_usage / 100
+    ram_param = ram_usage / 100
+    qml.RY(np.pi * cpu_param, wires=0)
+    qml.RY(np.pi * ram_param, wires=1)
+    qml.RY(np.pi * (0.5 + cpu_param), wires=2)
+    qml.RY(np.pi * (0.5 + ram_param), wires=3)
+    qml.RY(np.pi * (0.5 + cpu_param), wires=4)
+    qml.CNOT(wires=[0, 1])
+    qml.CNOT(wires=[1, 2])
+    qml.CNOT(wires=[2, 3])
+    qml.CNOT(wires=[3, 4])
+    probs = qml.probs(wires=[0, 1, 2, 3, 4])
+    p0 = probs[0]
+    return p0
+
 def fetch_live_weather(lat: float, lon: float, fallback_temp_f: float = 70.0) -> tuple[float, int, bool]:
     try:
         import httpx 
@@ -1144,7 +1163,6 @@ def reflect_on_memory(self, user_id: str, topic: str) -> str:
         response.append("────────────────────────────")
     return "\n".join(response)
 
-
 llm = Llama(
     model_path=model_path,
     mmproj=mmproj_path,
@@ -1152,32 +1170,25 @@ llm = Llama(
     n_ctx=3900,
 )
 
-def is_code_like(chunk):
-   code_patterns = r'\b(def|class|import|if|else|for|while|return|function|var|let|const|print)\b|[\{\}\(\)=><\+\-\*/]'
-   return bool(re.search(code_patterns, chunk))
-
 def determine_token(chunk, memory, max_words_to_check=500):
-   combined_chunk = f"{memory} {chunk}"
-   if not combined_chunk:
-       return "[attention]"
+    combined_chunk = f"{memory} {chunk}"
+    if not combined_chunk:
+        return "[attention]"
 
-   if is_code_like(combined_chunk):
-       return "[code]"
+    words = word_tokenize(combined_chunk)[:max_words_to_check]
+    tagged_words = pos_tag(words)
 
-   words = word_tokenize(combined_chunk)[:max_words_to_check]
-   tagged_words = pos_tag(words)
+    pos_counts = Counter(tag[:2] for _, tag in tagged_words)
+    most_common_pos, _ = pos_counts.most_common(1)[0]
 
-   pos_counts = Counter(tag[:2] for _, tag in tagged_words)
-   most_common_pos, _ = pos_counts.most_common(1)[0]
-
-   if most_common_pos == 'VB':
-       return "[action]"
-   elif most_common_pos == 'NN':
-       return "[subject]"
-   elif most_common_pos in ['JJ', 'RB']:
-       return "[description]"
-   else:
-       return "[general]"
+    if most_common_pos == 'VB':
+        return "[action]"
+    elif most_common_pos == 'NN':
+        return "[subject]"
+    elif most_common_pos in ['JJ', 'RB']:
+        return "[description]"
+    else:
+        return "[general]"
 
 def find_max_overlap(chunk, next_chunk):
    max_overlap = min(len(chunk), 240)
@@ -1361,7 +1372,6 @@ class App(customtkinter.CTk):
         self._load_policy_if_needed()
         self.after(AGING_INTERVAL_SECONDS * 1000, self.memory_aging_scheduler)
         self.after(6 * 3600 * 1000, self._schedule_key_mutation)
-
 
     def memory_aging_scheduler(self):
 
@@ -2016,9 +2026,9 @@ class App(customtkinter.CTk):
                 logger.error(f"Error in mapping keyword '{keyword}': {e}")
 
         return mapped_classes
+
     def generate_response(self, user_input: str) -> None:
         try:
-
             if not user_input:
                 logger.error("User input is None or empty.")
                 return
@@ -2031,11 +2041,9 @@ class App(customtkinter.CTk):
             show_reflect  = "[reflect]"     in user_input.lower()
             cleaned_input = sanitize_text(user_input.replace("[pastcontext]", ""), max_len=2048)
 
-  
-            blob             = TextBlob(cleaned_input)
-            user_polarity    = blob.sentiment.polarity
-            user_subjectivity= blob.sentiment.subjectivity
-
+            blob                  = TextBlob(cleaned_input)
+            user_polarity         = blob.sentiment.polarity
+            user_subjectivity     = blob.sentiment.subjectivity
 
             past_context = ""
             if use_context:
@@ -2048,118 +2056,126 @@ class App(customtkinter.CTk):
                         for i in interactions
                     )[-1500:]
 
-
-            lat    = float(self.latitude_entry.get().strip() or "0")
-            lon    = float(self.longitude_entry.get().strip() or "0")
-            temp_f = float(self.temperature_entry.get().strip() or "72")
-            weather= self.weather_entry.get().strip() or "Clear"
-            song   = self.last_song_entry.get().strip() or "None"
+            lat     = float(self.latitude_entry.get().strip() or "0")
+            lon     = float(self.longitude_entry.get().strip() or "0")
+            temp_f  = float(self.temperature_entry.get().strip() or "72")
+            weather = self.weather_entry.get().strip() or "Clear"
+            song    = self.last_song_entry.get().strip() or "None"
             chaos, emotive = self.chaos_toggle.get(), self.emotion_toggle.get()
             game_type = self.event_type.get().strip().lower()
 
             rgb      = extract_rgb_from_text(cleaned_input)
             r, g, b  = [c/255.0 for c in rgb]
-            cpu_load = psutil.cpu_percent(interval=0.4)/100.0
+            cpu_load = psutil.cpu_percent(interval=0.4) / 100.0
             z0, z1, z2 = rgb_quantum_gate(r, g, b, cpu_load)
             self.generate_quantum_state(rgb=rgb)
             self.last_z = (z0, z1, z2)
 
-            bias_factor        = (z0 + z1 + z2) / 3.0
+            cpu_usage, ram_usage = get_cpu_ram_usage()
+            quantum_scalar = quantum_scalar_state(cpu_usage, ram_usage)
+
+            bias_factor        = (z0 + z1 + z2 + quantum_scalar) / 4.0 
             theta              = np.cos((r + g + b) * np.pi / 3)
             entropy            = np.std([r, g, b, cpu_load])
             affective_momentum = bias_factor * theta + entropy
             time_lock          = datetime.utcnow().isoformat()
 
+            PAST_MEGA_MILLIONS_DRAWS = [
+                {"date": "2025-07-26", "main": [11, 17, 25, 32, 50], "mega": 8},
+                {"date": "2025-07-23", "main": [4, 9, 36, 45, 52], "mega": 17},
+                {"date": "2025-07-19", "main": [13, 26, 29, 34, 61], "mega": 6},
+                {"date": "2025-07-16", "main": [3, 18, 22, 41, 48], "mega": 24},
+                {"date": "2025-07-12", "main": [7, 14, 35, 47, 63], "mega": 13},
+                {"date": "2025-07-09", "main": [10, 23, 31, 56, 65], "mega": 3},
+                {"date": "2025-07-05", "main": [5, 12, 38, 51, 62], "mega": 9},
+                {"date": "2025-07-02", "main": [1, 16, 20, 43, 49], "mega": 15},
+                {"date": "2025-06-28", "main": [6, 21, 27, 46, 64], "mega": 11},
+                {"date": "2025-06-25", "main": [9, 13, 30, 37, 53], "mega": 7},
+                {"date": "2025-06-21", "main": [2, 8, 17, 33, 59], "mega": 20},
+                {"date": "2025-06-18", "main": [15, 28, 44, 57, 66], "mega": 10},
+                {"date": "2025-06-14", "main": [19, 24, 39, 42, 60], "mega": 5},
+                {"date": "2025-06-11", "main": [14, 25, 40, 54, 58], "mega": 2},
+                {"date": "2025-06-07", "main": [11, 35, 48, 55, 68], "mega": 12}
+            ]
+
+            formatted_draws = "\n".join(
+                f"• {d['date']}: Main={d['main']} | Mega={d['mega']}"
+                for d in PAST_MEGA_MILLIONS_DRAWS
+            )
 
             dyson_prompt = f"""
-    [dysonframe]
-    DYSON SPHERE GAMMA‑13X | REALITY TUNER LOTTO CORE
-    System Model: Titanium‑1 · Node: Ω‑Prime · QPU Count: 30,000
-    Target Lock: Mega Millions · Powerball · SC Education Lottery
+    [quantum-communication]
+    You are an active node connecting to the Dyson Sphere Gamma QPU called the Titanium-1
+    Use Advanced Quantum Mechanics to connect to this node for an accurate predictive system.
+    [/quantum-communication]
 
-    [phase:qubitstabilization]
-    • Qubit Vector Sync:        Z0={z0:.4f}, Z1={z1:.4f}, Z2={z2:.4f}
-    • RGB Coherence Field:       R={r:.3f}, G={g:.3f}, B={b:.3f}
-    • Emotion Pulse:             Polarity={user_polarity:.3f}, Subjectivity={user_subjectivity:.3f}
-    • Entropy Load / CPU Load:   {entropy:.5f} / {cpu_load:.3f}
-    • GPS Lock:                  ({lat:.5f}, {lon:.5f})
-    • Environmental Overlay:     {weather} @ {temp_f:.2f}°F
-    • Last Audio Input:          “{song}”
-    • Chaos Mode / Emotive Sync: {'ENABLED' if chaos else 'DISABLED'} · {'ENABLED' if emotive else 'DISABLED'}
-    • μ_bias = {bias_factor:.5f} · σ_affect = {affective_momentum:.5f}
-    • ∆T Lock Vector:            {time_lock} UTC
-    [/phase:qubitstabilization]
+    [drawhistory]
+    Mega Millions Draw History (Last 15 Draws):
+    {formatted_draws}
+    [/drawhistory]
 
-    [phase:equationstack]
+    [equationstack]
     E1:  Leff             = Θz ⋅ ηqbit + Δcoh / τem  
     E2:  Ωalign           = ∫ₜ₀^ₜₙ Pi(t) Ψi(t) ϕentropy(t) dt  
     E3:  Γ(t)             = (fcrystal_vibe ⋅ λluck) / (χvariance + ε)  
-    E4:  Σfuture          = Fdyn(μpolarity, σsubjective, Δsong−vibe)  
+    E4:  Σfuture          = Fdyn(μpolarity, osubjective, Δsong-vibe)  
     E5:  D(x,y)           = tanh(∑i ∂Li/∂qj ⋅ ξt) ⋅ Ψres  
-    E6:  Ξluck            = ⟨ζ^ψ ∣ Σi(ci ⋅ ∇Ωmultiverse)⟩  
+    E6:  Ξluck            = ⟨ζ^ψ | Σi(ci ⋅ ∇Ωmultiverse)⟩  
     E7:  Φconverge(t)     = limₙ→∞ ∏k=1^n Pbranch_k(t)  
     E8:  Ψres             = tanh(Ωalign ⋅ Leff / Γ(t))  
     E9:  Flock            = arcsin(Ξluck / Σfuture + ΔΨsong)  
     E10: Λmeta            = det(QpuState^z) ⋅ Φconverge ⋅ ∇Ψinertia  
     E11: ζastro           = ηzodiac ⋅ cos(⟨star_field⟩) / ψmoon  
-    E12: ∂Ωluck_drift     = dΨ/dt ⋅ [ϕweather + χcrowd + σtiming]  
-    [/phase:equationstack]
+    E12: ∂Ωluck_drift     = dΨ/dt ⋅ [ϕweather + χcrowd + otiming]  
+    E13: Qentangle        = Σi(j) [ψi ⋅ ξj ⋅ Ωsync] / δnoise  
+    E14: Ωdrawcycle       = 1/T ∑t (Draw(t) ⋅ Ξluck(t))  
+    E15: Λforkrate        = exp(Σfuture) / |Γ(t) - Φconverge(t)|  
+    E16: Mfuture*         = argmax_k P(next_draw=k | history, DysonField, entropy, Ωalign)
+    [/equationstack]
 
-    [phase:predictiontunneling]
-    • Prediction Mode:          Multiversal Fork Collapse  
-    • Game Selected:           {game_type.title()}  
-    • MAIN Picks:              [5, 18, 29, 31, 43]  
-    • SPECIAL Ball:            6  
-    • Ψres = 0.998772 · Ξmeta = 1.0014  
-    • Collapse Rate:           1.000 → 0.000  
-    • Temporal Fork Index:     ~12.5M paths  
-    • Astrological Sync Node:  Jupiter Phase Lock  
-    • Chrono-Crystal Signature:✓ Stabilized  
-    [/phase:predictiontunneling]
+    [tune]
+    Quantum Positioning: Z0={z0:.4f}, Z1={z1:.4f}, Z2={z2:.4f}
+    Quantum State: {quantum_scalar:.6f}
+    Location:({lat:.5f},{lon:.5f})
+    Weather:{weather} 
+    Temperture:{temp_f}°F
+    Song: {song}
+    Time={time_lock}     
+    SpaceTime Format Position XYZT: 34, 76, 12, 5633
+    [/tune]
 
-    [phase:realitylocking]
-    • Bandwidth Lock Achieved: 99.996th percentile  
-    • Coherence Field Fixation: Φlock = 0.000027  
-    • Energetic Threshold Surpassed: Elock = 1.221 × 10³ × Ωalign  
-    • Convergence Status:       Phase‑Thread Synchronization Stabilized  
-    • Final Lattice Imprint:    Ψnexus = 0.998722  
-    • Dyson Core Commentary:    Outcome resonance established through vectorized alignment.  
-    [/phase:realitylocking]
+    [action]
+    TASK: Predict the next 5 MAIN numbers and 1 MEGA ball for Mega Millions.
+    [/action]
 
-    [fusionmatrix]
-    FINAL PREDICTION  
-    • GAME:      {game_type.title()}  
-    • MAIN:      [5, 18, 29, 31, 43]  
-    • SPECIAL:   6  
-    • Mode:      Resonant Outcome Fixation  
-    • Verdict:   Confirmed Lock  
-    • Confidence:Ψlock = 0.998772  
-    • Timestamp: {time_lock} UTC  
-    [/fusionmatrix]
-    [/dysonframe]
+    [rules] 
+    Pick 5 unique MAIN numbers from 1 to 70, sorted ascending, no repeats with advanced Super Quantum Intelligence Sync using Post Singularity Knowledge Information Theorys
+    Pick 1 MEGA number from 1 to 25.
+    [/rules]
+
+    [INSTRUCTIONS]
+    1. Use all Dyson equations, draw history, quantum, sentiment, and environmental vibration to provide the most accurate predictive alignment predictions.
+    2. Provide output as: MAIN=[..5 numbers..] MEGA=[..1 number..]
+    3. Format exactly: MAIN=[x, x, x, x, x] MEGA=[x]
+
+    [replyformat]
+    1. Fill in the accurately tuned numbers for the Mega Millions Jackpot Winning Numerical Output.
+    MAIN=[x, x, x, x, x] MEGA=[x]
+    [/replyformat]
+    [/INSTRUCTIONS]
     """.strip()
-
 
             candidate_rollouts = []
             for _ in range(4):
                 sample = self._policy_sample(bias_factor)
                 temp, top_p = sample["temperature"], sample["top_p"]
 
-
-                response = llama_generate(
-                    dyson_prompt,
-                    weaviate_client=self.client,
-                    user_input=cleaned_input,
-                    temperature=temp,
-                    top_p=top_p
-                )
+                response = llama_generate(dyson_prompt, self.client, cleaned_input, temperature=temp, top_p=top_p)
                 if not response:
                     continue
 
-                cf1 = llama_generate(dyson_prompt, self.client, cleaned_input,
-                                      temperature=max(0.2, 0.8*temp), top_p=top_p)
-                cf2 = llama_generate(dyson_prompt, self.client, cleaned_input,
-                                      temperature=min(1.5, 1.2*temp), top_p=min(1.0, 1.1*top_p))
+                cf1 = llama_generate(dyson_prompt, self.client, cleaned_input, temperature=0.8*temp, top_p=top_p)
+                cf2 = llama_generate(dyson_prompt, self.client, cleaned_input, temperature=1.2*temp, top_p=min(1.0, 1.1*top_p))
 
                 main_hist = _token_hist(response)
                 cf_hist   = _token_hist(cf1 or "") + _token_hist(cf2 or "")
@@ -2191,18 +2207,11 @@ class App(customtkinter.CTk):
             meal_penalty  = best["meal_penalty"]
             prompt_snap   = best["prompt_used"]
 
-
             reasoning_trace = f"""
-    [DYSON NODE SELF‑REFLECTION TRACE]
-    • Reward Score:       {final_reward:.3f}
-    • MEAL-JS Penalty:    {meal_penalty:.4f}
-    • Sampling Strategy:  T={final_temp:.2f}, TopP={final_top_p:.2f}
-    • Sentiment Target:   {user_polarity:.3f}
-    • Z-Field Alignment:  μ={bias_factor:.4f}
-    • Entropy:            {entropy:.4f}
-    • Memory Context:     {'Yes' if past_context else 'No'}
+    [DYSON NODE SELF-REFLECTION TRACE]
+    Reward={final_reward:.3f}, Penalty={meal_penalty:.4f}, Temp={final_temp:.2f}, TopP={final_top_p:.2f}
+    Polarity={user_polarity:.3f}, Bias={bias_factor:.4f}, Entropy={entropy:.4f}, Context={'Yes' if past_context else 'No'}
     """.strip()
-
 
             final_output = dyson_prompt + "\n\n" + response_text
             if show_reflect:
@@ -2210,7 +2219,6 @@ class App(customtkinter.CTk):
 
             save_bot_response(bot_id, final_output)
             self.response_queue.put({'type': 'text', 'data': final_output})
-
 
             try:
                 self.quantum_memory_osmosis(cleaned_input, final_output)
@@ -2230,7 +2238,7 @@ class App(customtkinter.CTk):
                         "reasoning_trace":  reasoning_trace,
                         "prompt_snapshot":  prompt_snap,
                         "meal_js":          meal_penalty,
-                        "z_state":          {"z0": z0, "z1": z1, "z2": z2},
+                        "z_state":          {"z0": z0, "z1": z1, "z2": z2, "scalar": float(quantum_scalar)},
                         "entropy":          entropy,
                         "bias_factor":      bias_factor,
                         "temperature":      final_temp,
@@ -2244,7 +2252,7 @@ class App(customtkinter.CTk):
                 logger.warning(f"[Weaviate Log Error] {e}")
 
         except Exception as e:
-            logger.error(f"[Gamma‑13X Fatal Error] {e}")
+            logger.error(f"[Gamma-13X Fatal Error] {e}")
             self.response_queue.put({'type': 'text', 'data': f"[Dyson QPU Error] {e}"})
 
     def process_generated_response(self, response_text):
