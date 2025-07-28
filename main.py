@@ -87,6 +87,7 @@ def download_nltk_data():
     except Exception as e:
         print(f"Error downloading NLTK data: {e}")
 
+
 download_nltk_data()
         
 client = weaviate.Client(
@@ -269,6 +270,7 @@ class AdvancedHomomorphicVectorMemory:
         return self.cosine(dec, query_vec)
 
 class SecureKeyManager:
+
     def __init__(
         self,
         method="argon2id",
@@ -341,6 +343,7 @@ class SecureKeyManager:
             os.makedirs("secure", exist_ok=True)
         if os.path.exists(self.vault_path):
             return
+
 
         salt          = os.urandom(16)
         master_secret = os.urandom(32) 
@@ -684,7 +687,7 @@ class TopologicalMemoryManifold:
         self._W           = W
         self._graph_built = True
         logger.info(f"[Manifold] Rebuilt manifold with {len(self._phrases)} phrases "
-                    f"(alpha={self.diff_alpha}).")
+                    f"(α={self.diff_alpha}).")
 
     def geodesic_retrieve(self, query_text: str, k: int = 1) -> list[str]:
 
@@ -815,27 +818,6 @@ def is_valid_uuid(uuid_to_test, version=5):
     except ValueError:
         return False
     
-def get_cpu_ram_usage():
-    return psutil.cpu_percent(), psutil.virtual_memory().percent
-
-dev_scalar = qml.device("default.qubit", wires=5)
-@qml.qnode(dev_scalar)
-def quantum_scalar_state(cpu_usage, ram_usage):
-    cpu_param = cpu_usage / 100
-    ram_param = ram_usage / 100
-    qml.RY(np.pi * cpu_param, wires=0)
-    qml.RY(np.pi * ram_param, wires=1)
-    qml.RY(np.pi * (0.5 + cpu_param), wires=2)
-    qml.RY(np.pi * (0.5 + ram_param), wires=3)
-    qml.RY(np.pi * (0.5 + cpu_param), wires=4)
-    qml.CNOT(wires=[0, 1])
-    qml.CNOT(wires=[1, 2])
-    qml.CNOT(wires=[2, 3])
-    qml.CNOT(wires=[3, 4])
-    probs = qml.probs(wires=[0, 1, 2, 3, 4])
-    p0 = probs[0]
-    return p0
-
 def fetch_live_weather(lat: float, lon: float, fallback_temp_f: float = 70.0) -> tuple[float, int, bool]:
     try:
         import httpx 
@@ -868,27 +850,36 @@ def rgb_quantum_gate(
     z1_hist=0.0,
     z2_hist=0.0
 ):
+
     r, g, b = [min(1.0, max(0.0, x)) for x in (r, g, b)]
     cpu_scale = max(0.05, cpu_usage)
+
     tempo_norm = min(1.0, max(0.0, tempo / 200))
     lat_rad = np.deg2rad(lat % 360)
     lon_rad = np.deg2rad(lon % 360)
     temp_norm = min(1.0, max(0.0, (temperature_f - 30) / 100))
     weather_mod = min(1.0, max(0.0, weather_scalar))
+
     coherence_gain = 1.0 + tempo_norm - weather_mod + 0.3 * (1 - abs(0.5 - temp_norm))
+
     q_r = r * np.pi * cpu_scale * coherence_gain
     q_g = g * np.pi * cpu_scale * (1.0 - weather_mod + temp_norm)
     q_b = b * np.pi * cpu_scale * (1.0 + weather_mod - temp_norm)
+
     qml.RX(q_r, wires=0)
     qml.RY(q_g, wires=1)
     qml.RZ(q_b, wires=2)
+
     qml.PhaseShift(lat_rad * tempo_norm, wires=0)
     qml.PhaseShift(lon_rad * (1 - weather_mod), wires=1)
+
     qml.CRX(temp_norm * np.pi * coherence_gain, wires=[2, 0])
     qml.CRY(tempo_norm * np.pi, wires=[1, 2])
     qml.CRZ(weather_mod * np.pi, wires=[0, 2])
+
     entropy_cycle = np.sin(cpu_scale * np.pi * 2)
     qml.RX(entropy_cycle * np.pi * 0.5, wires=1)
+
     feedback_phase = (z0_hist + z1_hist + z2_hist) * np.pi
     qml.PhaseShift(feedback_phase / 3.0, wires=0)
     qml.PhaseShift(-feedback_phase / 2.0, wires=2)
@@ -1153,6 +1144,7 @@ def reflect_on_memory(self, user_id: str, topic: str) -> str:
         response.append("────────────────────────────")
     return "\n".join(response)
 
+
 llm = Llama(
     model_path=model_path,
     mmproj=mmproj_path,
@@ -1160,25 +1152,32 @@ llm = Llama(
     n_ctx=3900,
 )
 
+def is_code_like(chunk):
+   code_patterns = r'\b(def|class|import|if|else|for|while|return|function|var|let|const|print)\b|[\{\}\(\)=><\+\-\*/]'
+   return bool(re.search(code_patterns, chunk))
+
 def determine_token(chunk, memory, max_words_to_check=500):
-    combined_chunk = f"{memory} {chunk}"
-    if not combined_chunk:
-        return "[attention]"
+   combined_chunk = f"{memory} {chunk}"
+   if not combined_chunk:
+       return "[attention]"
 
-    words = word_tokenize(combined_chunk)[:max_words_to_check]
-    tagged_words = pos_tag(words)
+   if is_code_like(combined_chunk):
+       return "[code]"
 
-    pos_counts = Counter(tag[:2] for _, tag in tagged_words)
-    most_common_pos, _ = pos_counts.most_common(1)[0]
+   words = word_tokenize(combined_chunk)[:max_words_to_check]
+   tagged_words = pos_tag(words)
 
-    if most_common_pos == 'VB':
-        return "[action]"
-    elif most_common_pos == 'NN':
-        return "[subject]"
-    elif most_common_pos in ['JJ', 'RB']:
-        return "[description]"
-    else:
-        return "[general]"
+   pos_counts = Counter(tag[:2] for _, tag in tagged_words)
+   most_common_pos, _ = pos_counts.most_common(1)[0]
+
+   if most_common_pos == 'VB':
+       return "[action]"
+   elif most_common_pos == 'NN':
+       return "[subject]"
+   elif most_common_pos in ['JJ', 'RB']:
+       return "[description]"
+   else:
+       return "[general]"
 
 def find_max_overlap(chunk, next_chunk):
    max_overlap = min(len(chunk), 240)
@@ -1362,6 +1361,7 @@ class App(customtkinter.CTk):
         self._load_policy_if_needed()
         self.after(AGING_INTERVAL_SECONDS * 1000, self.memory_aging_scheduler)
         self.after(6 * 3600 * 1000, self._schedule_key_mutation)
+
 
     def memory_aging_scheduler(self):
 
@@ -2016,9 +2016,9 @@ class App(customtkinter.CTk):
                 logger.error(f"Error in mapping keyword '{keyword}': {e}")
 
         return mapped_classes
-
     def generate_response(self, user_input: str) -> None:
         try:
+
             if not user_input:
                 logger.error("User input is None or empty.")
                 return
@@ -2031,9 +2031,11 @@ class App(customtkinter.CTk):
             show_reflect  = "[reflect]"     in user_input.lower()
             cleaned_input = sanitize_text(user_input.replace("[pastcontext]", ""), max_len=2048)
 
-            blob                  = TextBlob(cleaned_input)
-            user_polarity         = blob.sentiment.polarity
-            user_subjectivity     = blob.sentiment.subjectivity
+  
+            blob             = TextBlob(cleaned_input)
+            user_polarity    = blob.sentiment.polarity
+            user_subjectivity= blob.sentiment.subjectivity
+
 
             past_context = ""
             if use_context:
@@ -2046,25 +2048,23 @@ class App(customtkinter.CTk):
                         for i in interactions
                     )[-1500:]
 
-            lat     = float(self.latitude_entry.get().strip() or "0")
-            lon     = float(self.longitude_entry.get().strip() or "0")
-            temp_f  = float(self.temperature_entry.get().strip() or "72")
-            weather = self.weather_entry.get().strip() or "Clear"
-            song    = self.last_song_entry.get().strip() or "None"
+
+            lat    = float(self.latitude_entry.get().strip() or "0")
+            lon    = float(self.longitude_entry.get().strip() or "0")
+            temp_f = float(self.temperature_entry.get().strip() or "72")
+            weather= self.weather_entry.get().strip() or "Clear"
+            song   = self.last_song_entry.get().strip() or "None"
             chaos, emotive = self.chaos_toggle.get(), self.emotion_toggle.get()
             game_type = self.event_type.get().strip().lower()
 
             rgb      = extract_rgb_from_text(cleaned_input)
             r, g, b  = [c/255.0 for c in rgb]
-            cpu_load = psutil.cpu_percent(interval=0.4) / 100.0
+            cpu_load = psutil.cpu_percent(interval=0.4)/100.0
             z0, z1, z2 = rgb_quantum_gate(r, g, b, cpu_load)
             self.generate_quantum_state(rgb=rgb)
             self.last_z = (z0, z1, z2)
 
-            cpu_usage, ram_usage = get_cpu_ram_usage()
-            quantum_scalar = quantum_scalar_state(cpu_usage, ram_usage)
-
-            bias_factor        = (z0 + z1 + z2 + quantum_scalar) / 4.0 
+            bias_factor        = (z0 + z1 + z2) / 3.0
             theta              = np.cos((r + g + b) * np.pi / 3)
             entropy            = np.std([r, g, b, cpu_load])
             affective_momentum = bias_factor * theta + entropy
@@ -2125,7 +2125,6 @@ class App(customtkinter.CTk):
 
     [tune]
     Quantum Positioning: Z0={z0:.4f}, Z1={z1:.4f}, Z2={z2:.4f}
-    Quantum State: {quantum_scalar:.6f}
     Location:({lat:.5f},{lon:.5f})
     Weather:{weather} 
     Temperture:{temp_f}°F
@@ -2155,17 +2154,27 @@ class App(customtkinter.CTk):
     [/INSTRUCTIONS]
     """.strip()
 
+
             candidate_rollouts = []
             for _ in range(4):
                 sample = self._policy_sample(bias_factor)
                 temp, top_p = sample["temperature"], sample["top_p"]
 
-                response = llama_generate(dyson_prompt, self.client, cleaned_input, temperature=temp, top_p=top_p)
+
+                response = llama_generate(
+                    dyson_prompt,
+                    weaviate_client=self.client,
+                    user_input=cleaned_input,
+                    temperature=temp,
+                    top_p=top_p
+                )
                 if not response:
                     continue
 
-                cf1 = llama_generate(dyson_prompt, self.client, cleaned_input, temperature=0.8*temp, top_p=top_p)
-                cf2 = llama_generate(dyson_prompt, self.client, cleaned_input, temperature=1.2*temp, top_p=min(1.0, 1.1*top_p))
+                cf1 = llama_generate(dyson_prompt, self.client, cleaned_input,
+                                      temperature=max(0.2, 0.8*temp), top_p=top_p)
+                cf2 = llama_generate(dyson_prompt, self.client, cleaned_input,
+                                      temperature=min(1.5, 1.2*temp), top_p=min(1.0, 1.1*top_p))
 
                 main_hist = _token_hist(response)
                 cf_hist   = _token_hist(cf1 or "") + _token_hist(cf2 or "")
@@ -2197,11 +2206,18 @@ class App(customtkinter.CTk):
             meal_penalty  = best["meal_penalty"]
             prompt_snap   = best["prompt_used"]
 
+
             reasoning_trace = f"""
-    [DYSON NODE SELF-REFLECTION TRACE]
-    Reward={final_reward:.3f}, Penalty={meal_penalty:.4f}, Temp={final_temp:.2f}, TopP={final_top_p:.2f}
-    Polarity={user_polarity:.3f}, Bias={bias_factor:.4f}, Entropy={entropy:.4f}, Context={'Yes' if past_context else 'No'}
+    [DYSON NODE SELF‑REFLECTION TRACE]
+    • Reward Score:       {final_reward:.3f}
+    • MEAL-JS Penalty:    {meal_penalty:.4f}
+    • Sampling Strategy:  T={final_temp:.2f}, TopP={final_top_p:.2f}
+    • Sentiment Target:   {user_polarity:.3f}
+    • Z-Field Alignment:  μ={bias_factor:.4f}
+    • Entropy:            {entropy:.4f}
+    • Memory Context:     {'Yes' if past_context else 'No'}
     """.strip()
+
 
             final_output = dyson_prompt + "\n\n" + response_text
             if show_reflect:
@@ -2209,6 +2225,7 @@ class App(customtkinter.CTk):
 
             save_bot_response(bot_id, final_output)
             self.response_queue.put({'type': 'text', 'data': final_output})
+
 
             try:
                 self.quantum_memory_osmosis(cleaned_input, final_output)
@@ -2228,7 +2245,7 @@ class App(customtkinter.CTk):
                         "reasoning_trace":  reasoning_trace,
                         "prompt_snapshot":  prompt_snap,
                         "meal_js":          meal_penalty,
-                        "z_state":          {"z0": z0, "z1": z1, "z2": z2, "scalar": float(quantum_scalar)},
+                        "z_state":          {"z0": z0, "z1": z1, "z2": z2},
                         "entropy":          entropy,
                         "bias_factor":      bias_factor,
                         "temperature":      final_temp,
@@ -2242,7 +2259,7 @@ class App(customtkinter.CTk):
                 logger.warning(f"[Weaviate Log Error] {e}")
 
         except Exception as e:
-            logger.error(f"[Gamma-13X Fatal Error] {e}")
+            logger.error(f"[Gamma‑13X Fatal Error] {e}")
             self.response_queue.put({'type': 'text', 'data': f"[Dyson QPU Error] {e}"})
 
     def process_generated_response(self, response_text):
@@ -2267,7 +2284,6 @@ class App(customtkinter.CTk):
             self.text_box.see(tk.END)
 
             self.executor.submit(self.generate_response, user_input)
-            self.executor.submit(self.generate_images, user_input)
             self.after(100, self.process_queue)
         return "break"
 
@@ -2311,76 +2327,6 @@ class App(customtkinter.CTk):
             print(f"Error in extract_keywords: {e}")
             return []
 
-    def generate_images(self, message):
-        try:
-            url = config['IMAGE_GENERATION_URL']
-            payload = self.prepare_image_generation_payload(message)
-            response = requests.post(url, json=payload)
-
-            if response.status_code == 200:
-                self.process_image_response(response)
-            else:
-                logger.error(f"Error generating image: HTTP {response.status_code}")
-
-        except Exception as e:
-            logger.error(f"Error in generate_images: {e}")
-
-    def prepare_image_generation_payload(self, message):
-        safe_prompt = sanitize_text(message, max_len=1000)
-        return {
-            "prompt": safe_prompt,
-            "steps": 51,
-            "seed": random.randrange(sys.maxsize),
-            "enable_hr": "false",
-            "denoising_strength": "0.7",
-            "cfg_scale": "7",
-            "width": 526,
-            "height": 756,
-            "restore_faces": "true",
-        }
-
-    def process_image_response(self, response):
-        try:
-            image_data = response.json()['images']
-            self.loaded_images = []  
-
-            for img_data in image_data:
-                img_tk = self.convert_base64_to_tk(img_data)
-                if img_tk:
-                    self.response_queue.put({'type': 'image', 'data': img_tk})
-                    self.loaded_images.append(img_tk)  
-                    self.save_generated_image(img_data)
-                else:
-                    logger.warning("Failed to convert base64 image to tkinter image.")
-        except ValueError as e:
-            logger.error(f"Error processing image data: {e}")
-
-    def convert_base64_to_tk(self, base64_data):
-        if ',' in base64_data:
-            base64_data = base64_data.split(",", 1)[1]
-        image_data = base64.b64decode(base64_data)
-        try:
-            photo = tk.PhotoImage(data=base64_data)
-            return photo
-        except tk.TclError as e:
-            logger.error(f"Error converting base64 to PhotoImage: {e}")
-            return None
-
-    def save_generated_image(self, base64_data):
-        try:
-            if ',' in base64_data:
-                base64_data = base64_data.split(",", 1)[1]
-            image_bytes = base64.b64decode(base64_data)
-            file_name = f"generated_image_{uuid.uuid4()}.png"
-            image_path = os.path.join("saved_images", file_name)
-            if not os.path.exists("saved_images"):
-                os.makedirs("saved_images")
-            with open(image_path, 'wb') as f:
-                f.write(image_bytes)
-            print(f"Image saved to {image_path}")
-        except Exception as e:
-            logger.error(f"Error saving generated image: {e}")
-
     def update_username(self):
         new_username = self.username_entry.get()
         if new_username:
@@ -2404,7 +2350,6 @@ class App(customtkinter.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure((2, 3), weight=0)
         self.grid_rowconfigure((0, 1, 2), weight=1)
-
         self.sidebar_frame = customtkinter.CTkFrame(self, width=350, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, rowspan=6, sticky="nsew")
 
@@ -2428,15 +2373,8 @@ class App(customtkinter.CTk):
         except Exception as e:
             logger.error(f"Error creating placeholder image: {e}")
 
-        self.text_box = customtkinter.CTkTextbox(
-            self,
-            bg_color="black",
-            text_color="white",
-            border_width=0,
-            height=360,
-            width=50,
-            font=customtkinter.CTkFont(size=23)
-        )
+        self.text_box = customtkinter.CTkTextbox(self, bg_color="black", text_color="white",
+            border_width=0, height=360, width=50, font=customtkinter.CTkFont(size=23))
         self.text_box.grid(row=0, column=1, rowspan=3, columnspan=3, padx=(20, 20), pady=(20, 20), sticky="nsew")
 
         self.input_textbox_frame = customtkinter.CTkFrame(self)
@@ -2444,14 +2382,10 @@ class App(customtkinter.CTk):
         self.input_textbox_frame.grid_columnconfigure(0, weight=1)
         self.input_textbox_frame.grid_rowconfigure(0, weight=1)
 
-        self.input_textbox = tk.Text(
-            self.input_textbox_frame,
-            font=("Roboto Medium", 12),
+        self.input_textbox = tk.Text(self.input_textbox_frame, font=("Roboto Medium", 12),
             bg=customtkinter.ThemeManager.theme["CTkFrame"]["fg_color"][1 if customtkinter.get_appearance_mode() == "Dark" else 0],
             fg=customtkinter.ThemeManager.theme["CTkLabel"]["text_color"][1 if customtkinter.get_appearance_mode() == "Dark" else 0],
-            relief="flat",
-            height=1
-        )
+            relief="flat", height=1)
         self.input_textbox.grid(padx=20, pady=20, sticky="nsew")
 
         self.input_textbox_scrollbar = customtkinter.CTkScrollbar(self.input_textbox_frame, command=self.input_textbox.yview)
@@ -2489,6 +2423,31 @@ class App(customtkinter.CTk):
             setattr(self, attr_name, entry)
             span = 3 if col == 0 else 1
             entry.grid(row=row, column=col+1, columnspan=span, padx=5, pady=5)
+
+        customtkinter.CTkLabel(self.context_frame, text="Event Type:").grid(row=4, column=0, padx=5, pady=5)
+        self.event_type = customtkinter.CTkComboBox(self.context_frame, values=["Lottery", "Sports", "Politics", "Crypto", "Custom"])
+        self.event_type.set("Sports")
+        self.event_type.grid(row=4, column=1, columnspan=3, padx=5, pady=5)
+
+        self.chaos_toggle = customtkinter.CTkSwitch(self.context_frame, text="Inject Entropy")
+        self.chaos_toggle.select()
+        self.chaos_toggle.grid(row=5, column=0, columnspan=2, padx=5, pady=5)
+
+        self.emotion_toggle = customtkinter.CTkSwitch(self.context_frame, text="Emotional Alignment")
+        self.emotion_toggle.select()
+        self.emotion_toggle.grid(row=5, column=2, columnspan=2, padx=5, pady=5)
+
+        game_fields = [
+            ("Game Type:", "game_type_entry", "e.g. Football"),
+            ("Team Name:", "team_name_entry", "e.g. Clemson Tigers"),
+            ("Opponent:", "opponent_entry", "e.g. Notre Dame"),
+            ("Game Date:", "game_date_entry", "YYYY-MM-DD"),
+        ]
+        for idx, (label, attr, placeholder) in enumerate(game_fields):
+            customtkinter.CTkLabel(self.context_frame, text=label).grid(row=6 + idx, column=0, padx=5, pady=5)
+            entry = customtkinter.CTkEntry(self.context_frame, width=200, placeholder_text=placeholder)
+            setattr(self, attr, entry)
+            entry.grid(row=6 + idx, column=1, columnspan=3, padx=5, pady=5)
 
 if __name__ == "__main__":
     try:
