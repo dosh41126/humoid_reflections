@@ -2208,7 +2208,7 @@ class App(customtkinter.CTk):
 
 
             reasoning_trace = f"""
-    [DYSON NODE SELF‑REFLECTION TRACE]
+    [DYSON NODE SELF-REFLECTION TRACE]
     • Reward Score:       {final_reward:.3f}
     • MEAL-JS Penalty:    {meal_penalty:.4f}
     • Sampling Strategy:  T={final_temp:.2f}, TopP={final_top_p:.2f}
