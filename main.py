@@ -269,7 +269,6 @@ class AdvancedHomomorphicVectorMemory:
         return self.cosine(dec, query_vec)
 
 class SecureKeyManager:
-
     def __init__(
         self,
         method="argon2id",
@@ -685,7 +684,7 @@ class TopologicalMemoryManifold:
         self._W           = W
         self._graph_built = True
         logger.info(f"[Manifold] Rebuilt manifold with {len(self._phrases)} phrases "
-                    f"(α={self.diff_alpha}).")
+                    f"(alpha={self.diff_alpha}).")
 
     def geodesic_retrieve(self, query_text: str, k: int = 1) -> list[str]:
 
@@ -869,36 +868,27 @@ def rgb_quantum_gate(
     z1_hist=0.0,
     z2_hist=0.0
 ):
-
     r, g, b = [min(1.0, max(0.0, x)) for x in (r, g, b)]
     cpu_scale = max(0.05, cpu_usage)
-
     tempo_norm = min(1.0, max(0.0, tempo / 200))
     lat_rad = np.deg2rad(lat % 360)
     lon_rad = np.deg2rad(lon % 360)
     temp_norm = min(1.0, max(0.0, (temperature_f - 30) / 100))
     weather_mod = min(1.0, max(0.0, weather_scalar))
-
     coherence_gain = 1.0 + tempo_norm - weather_mod + 0.3 * (1 - abs(0.5 - temp_norm))
-
     q_r = r * np.pi * cpu_scale * coherence_gain
     q_g = g * np.pi * cpu_scale * (1.0 - weather_mod + temp_norm)
     q_b = b * np.pi * cpu_scale * (1.0 + weather_mod - temp_norm)
-
     qml.RX(q_r, wires=0)
     qml.RY(q_g, wires=1)
     qml.RZ(q_b, wires=2)
-
     qml.PhaseShift(lat_rad * tempo_norm, wires=0)
     qml.PhaseShift(lon_rad * (1 - weather_mod), wires=1)
-
     qml.CRX(temp_norm * np.pi * coherence_gain, wires=[2, 0])
     qml.CRY(tempo_norm * np.pi, wires=[1, 2])
     qml.CRZ(weather_mod * np.pi, wires=[0, 2])
-
     entropy_cycle = np.sin(cpu_scale * np.pi * 2)
     qml.RX(entropy_cycle * np.pi * 0.5, wires=1)
-
     feedback_phase = (z0_hist + z1_hist + z2_hist) * np.pi
     qml.PhaseShift(feedback_phase / 3.0, wires=0)
     qml.PhaseShift(-feedback_phase / 2.0, wires=2)
@@ -2414,6 +2404,7 @@ class App(customtkinter.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure((2, 3), weight=0)
         self.grid_rowconfigure((0, 1, 2), weight=1)
+
         self.sidebar_frame = customtkinter.CTkFrame(self, width=350, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, rowspan=6, sticky="nsew")
 
@@ -2437,8 +2428,15 @@ class App(customtkinter.CTk):
         except Exception as e:
             logger.error(f"Error creating placeholder image: {e}")
 
-        self.text_box = customtkinter.CTkTextbox(self, bg_color="black", text_color="white",
-            border_width=0, height=360, width=50, font=customtkinter.CTkFont(size=23))
+        self.text_box = customtkinter.CTkTextbox(
+            self,
+            bg_color="black",
+            text_color="white",
+            border_width=0,
+            height=360,
+            width=50,
+            font=customtkinter.CTkFont(size=23)
+        )
         self.text_box.grid(row=0, column=1, rowspan=3, columnspan=3, padx=(20, 20), pady=(20, 20), sticky="nsew")
 
         self.input_textbox_frame = customtkinter.CTkFrame(self)
@@ -2446,10 +2444,14 @@ class App(customtkinter.CTk):
         self.input_textbox_frame.grid_columnconfigure(0, weight=1)
         self.input_textbox_frame.grid_rowconfigure(0, weight=1)
 
-        self.input_textbox = tk.Text(self.input_textbox_frame, font=("Roboto Medium", 12),
+        self.input_textbox = tk.Text(
+            self.input_textbox_frame,
+            font=("Roboto Medium", 12),
             bg=customtkinter.ThemeManager.theme["CTkFrame"]["fg_color"][1 if customtkinter.get_appearance_mode() == "Dark" else 0],
             fg=customtkinter.ThemeManager.theme["CTkLabel"]["text_color"][1 if customtkinter.get_appearance_mode() == "Dark" else 0],
-            relief="flat", height=1)
+            relief="flat",
+            height=1
+        )
         self.input_textbox.grid(padx=20, pady=20, sticky="nsew")
 
         self.input_textbox_scrollbar = customtkinter.CTkScrollbar(self.input_textbox_frame, command=self.input_textbox.yview)
@@ -2476,10 +2478,10 @@ class App(customtkinter.CTk):
 
         fields = [
             ("Latitude:", "latitude_entry", 0, 0),
-            ("Longitude:", "longitude_entry", 0, 2),
-            ("Weather:", "weather_entry", 1, 0),
-            ("Temperature (°F):", "temperature_entry", 2, 0),
-            ("Last Song:", "last_song_entry", 3, 0),
+            ("Longitude:", "longitude_entry", 1, 0),
+            ("Weather:", "weather_entry", 2, 0),
+            ("Temperature (°F):", "temperature_entry", 3, 0),
+            ("Last Song:", "last_song_entry", 4, 0),
         ]
         for label_text, attr_name, row, col in fields:
             customtkinter.CTkLabel(self.context_frame, text=label_text).grid(row=row, column=col, padx=5, pady=5)
@@ -2487,31 +2489,6 @@ class App(customtkinter.CTk):
             setattr(self, attr_name, entry)
             span = 3 if col == 0 else 1
             entry.grid(row=row, column=col+1, columnspan=span, padx=5, pady=5)
-
-        customtkinter.CTkLabel(self.context_frame, text="Event Type:").grid(row=4, column=0, padx=5, pady=5)
-        self.event_type = customtkinter.CTkComboBox(self.context_frame, values=["Lottery", "Sports", "Politics", "Crypto", "Custom"])
-        self.event_type.set("Sports")
-        self.event_type.grid(row=4, column=1, columnspan=3, padx=5, pady=5)
-
-        self.chaos_toggle = customtkinter.CTkSwitch(self.context_frame, text="Inject Entropy")
-        self.chaos_toggle.select()
-        self.chaos_toggle.grid(row=5, column=0, columnspan=2, padx=5, pady=5)
-
-        self.emotion_toggle = customtkinter.CTkSwitch(self.context_frame, text="Emotional Alignment")
-        self.emotion_toggle.select()
-        self.emotion_toggle.grid(row=5, column=2, columnspan=2, padx=5, pady=5)
-
-        game_fields = [
-            ("Game Type:", "game_type_entry", "e.g. Football"),
-            ("Team Name:", "team_name_entry", "e.g. Clemson Tigers"),
-            ("Opponent:", "opponent_entry", "e.g. Notre Dame"),
-            ("Game Date:", "game_date_entry", "YYYY-MM-DD"),
-        ]
-        for idx, (label, attr, placeholder) in enumerate(game_fields):
-            customtkinter.CTkLabel(self.context_frame, text=label).grid(row=6 + idx, column=0, padx=5, pady=5)
-            entry = customtkinter.CTkEntry(self.context_frame, width=200, placeholder_text=placeholder)
-            setattr(self, attr, entry)
-            entry.grid(row=6 + idx, column=1, columnspan=3, padx=5, pady=5)
 
 if __name__ == "__main__":
     try:
