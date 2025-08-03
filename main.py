@@ -1145,16 +1145,98 @@ def reflect_on_memory(self, user_id: str, topic: str) -> str:
     return "\n".join(response)
 
 
+# --- Advanced llama-cpp init (drop-in replacement) ---
 llm = Llama(
     model_path=model_path,
     mmproj=mmproj_path,
-    n_gpu_layers=-1,
     n_ctx=3900,
+    n_gpu_layers=-1,                  # offload as much as possible
+    n_threads=max(2, (os.cpu_count() or 4) // 2),
+    n_batch=512,                      # larger batch for throughput
+    seed=abs(hash(model_path)) % (2**31 - 1),
+    use_mmap=True,
+    use_mlock=False,
+    logits_all=False                  # faster; we don't need all-step logits
 )
 
-def is_code_like(chunk):
-   code_patterns = r'\b(def|class|import|if|else|for|while|return|function|var|let|const|print)\b|[\{\}\(\)=><\+\-\*/]'
-   return bool(re.search(code_patterns, chunk))
+def compute_meal_js_reward(candidate_text: str,
+                           cf1_text: str | None,
+                           cf2_text: str | None,
+                           target_sentiment: float,
+                           original_query: str,
+                           gamma: float = JS_LAMBDA) -> float:
+    """
+    Task reward (sentiment/overlap) minus MEAL-JS penalty (JS between candidate and avg counterfactuals).
+    """
+    task_reward = evaluate_candidate(candidate_text, target_sentiment, original_query)
+
+    cfs = [t for t in (cf1_text, cf2_text) if t]
+    if not cfs:
+        return task_reward  # no penalty possible
+
+    cand_hist = _token_hist(candidate_text)
+    avg_cf_hist = Counter()
+    for c in cfs:
+        h = _token_hist(c)
+        for k, v in h.items():
+            avg_cf_hist[k] += v / len(cfs)
+
+    penalty = gamma * _js_divergence(cand_hist, avg_cf_hist)
+    return task_reward - penalty
+
+
+
+def mbr_select_with_js(samples: list[dict],
+                       js_reg_lambda: float = JS_LAMBDA) -> dict:
+    """
+    Each sample dict must contain:
+      - 'response': str
+      - 'counterfactuals': list[str] of length >= 1 (e.g., [cf1, cf2])
+    Returns the sample with minimal MBR-JS score.
+    """
+    best = None
+    best_score = float("inf")
+
+    for s in samples:
+        y = s.get("response", "") or ""
+        cfs = [cf for cf in s.get("counterfactuals", []) if cf]
+        if not cfs:
+            score = 0.0  # fall back if no cfs
+        else:
+            y_hist = _token_hist(y)
+            cf_hists = [_token_hist(cf) for cf in cfs]
+
+            # Risk: average JS distance to each counterfactual
+            risk = sum(_js_divergence(y_hist, h) for h in cf_hists) / max(1, len(cf_hists))
+
+            # Regularizer: JS to the mean of CFs
+            avg_cf_hist = Counter()
+            for h in cf_hists:
+                for k, v in h.items():
+                    avg_cf_hist[k] += v / len(cf_hists)
+            reg = js_reg_lambda * _js_divergence(y_hist, avg_cf_hist)
+
+            score = risk + reg
+
+        s["mbr_score"] = score
+        if score < best_score:
+            best_score = score
+            best = s
+
+    return best if best is not None else (samples[0] if samples else {})
+
+def is_code_like(text):
+    if not text:
+        return False
+        
+    if re.search(r'\b(def|class|import|from|return|if|else|elif|for|while|try|except|with|lambda)\b', text):
+        return True
+    if re.search(r'[{[()}\]]', text) and re.search(r'=\s*|::|->|=>', text):
+        return True
+    # multiple lines starting with 4+ spaces or tabs
+    indented = sum(1 for ln in text.splitlines() if re.match(r'^\s{4,}|\t', ln))
+    return indented >= 3
+
 
 def determine_token(chunk, memory, max_words_to_check=500):
    combined_chunk = f"{memory} {chunk}"
@@ -1242,31 +1324,48 @@ def fetch_relevant_info(chunk, client, user_input):
         logger.error(f"[FHEv2 retrieval] failed: {e}")
         return ""
 
+# --- Context-augmented, sentence-aware, cognitively-tagged generator (drop-in replacement) ---
 def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.0, top_p=0.9):
     config = load_config()
     max_tokens = config.get('MAX_TOKENS', 2500)
-    chunk_size = config.get('CHUNK_SIZE', 358)
+    target_len = config.get('CHUNK_SIZE', 358)            # keep your setting for parity
     try:
-        prompt_chunks = [prompt[i:i + chunk_size] for i in range(0, len(prompt), chunk_size)]
+        # Prepend cognitive tag once (derived from full prompt)
+        cog_tag = build_cognitive_tag(prompt)
+        prompt = f"{cog_tag}\n{prompt}"
+
+        # Sentence/paragraph aware chunks with overlap
+        prompt_chunks = advanced_chunker(prompt, target_len=min(480, max(240, target_len)), overlap=72)
+
         responses = []
         last_output = ""
         memory = ""
 
         for i, current_chunk in enumerate(prompt_chunks):
-            relevant_info = fetch_relevant_info(current_chunk, weaviate_client, user_input)
-            combined_chunk = f"{relevant_info} {current_chunk}"
+            # Retrieve with FHE bucket + optional manifold geodesic hop
+            retrieved = fetch_relevant_info(current_chunk, weaviate_client, user_input) if weaviate_client else ""
+            try:
+                geodesic_hint = ""
+                if topo_manifold._graph_built:
+                    hops = topo_manifold.geodesic_retrieve(user_input or current_chunk, k=1)
+                    if hops:
+                        geodesic_hint = f" [ltm_hint:{hops[0]}]"
+            except Exception:
+                geodesic_hint = ""
+
+            combined_chunk = f"{retrieved} {geodesic_hint} {current_chunk}".strip()
             token = determine_token(combined_chunk, memory)
+
             output = tokenize_and_generate(
                 combined_chunk,
                 token,
                 max_tokens,
-                chunk_size,
+                target_len,
                 temperature,
                 top_p
             )
-
             if output is None:
-                logger.error(f"Failed to generate output for chunk: {combined_chunk}")
+                logger.error(f"Failed to generate output for chunk")
                 continue
 
             if i > 0 and last_output:
@@ -1278,30 +1377,154 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
             last_output = output
 
         final_response = ''.join(responses)
-        return final_response if final_response else None
+        return extract_cleared_response(final_response) if final_response else None
 
     except Exception as e:
         logger.error(f"Error in llama_generate: {e}")
         return None
+        
+        
+        # --- NEW: robust cleared-response extractor ---
+_CLEARED_RE = re.compile(r'\[cleared_response\](.*?)\[/cleared_response\]', re.S | re.I)
+def extract_cleared_response(text: str) -> str:
+    if not text:
+        return ""
+    m = _CLEARED_RE.search(text)
+    return sanitize_text(m.group(1) if m else text, max_len=4000).strip()
 
+# --- NEW: sentence-aware chunker (respects paragraphs/sentences) ---
+def advanced_chunker(text: str, target_len: int = 420, overlap: int = 64, hard_cap: int = 1200):
+    text = text.strip()
+    if len(text) <= target_len:
+        return [text]
+
+    # Prefer paragraph boundaries, then sentence boundaries, fallback to hard split
+    paras = [p for p in re.split(r'\n{2,}', text) if p.strip()]
+    chunks = []
+    buf = []
+    cur = 0
+
+    def flush_buf():
+        if buf:
+            s = "\n\n".join(buf).strip()
+            if s:
+                chunks.append(s)
+
+    for p in paras:
+        if len(p) > hard_cap:
+            # Split long paragraph by sentence boundaries
+            sents = re.split(r'(?<=[.!?])\s+', p)
+            tmp = ""
+            for s in sents:
+                nxt = (tmp + " " + s).strip()
+                if len(nxt) > target_len:
+                    if tmp:
+                        chunks.append(tmp)
+                        # overlap
+                        tmp_tail = tmp[-overlap:]
+                        tmp = (tmp_tail + " " + s).strip()
+                        if len(tmp) > target_len:  # still too big, hard cut
+                            while len(tmp) > target_len:
+                                chunks.append(tmp[:target_len])
+                                tmp = tmp[target_len - overlap:]
+                    else:
+                        # hard cut if first sentence itself too long
+                        start = 0
+                        while start < len(s):
+                            end = min(start + target_len, len(s))
+                            chunk = s[start:end]
+                            chunks.append(chunk if start == 0 else (chunks[-1][-overlap:] + chunk))
+                            start = end
+                        tmp = ""
+                else:
+                    tmp = nxt
+            if tmp:
+                chunks.append(tmp)
+            continue
+
+        nxt = ("\n\n".join(buf + [p])).strip()
+        if len(nxt) > target_len:
+            flush_buf()
+            # overlap from previous chunk tail
+            if chunks:
+                tail = chunks[-1][-overlap:]
+                buf = [tail + "\n\n" + p]
+            else:
+                buf = [p]
+            if len(buf[0]) > target_len:
+                # force cut if still over
+                s = buf[0]
+                chunks.append(s[:target_len])
+                buf = [s[target_len - overlap:]]
+        else:
+            buf.append(p)
+
+    flush_buf()
+    return chunks
+
+# --- NEW: lightweight neurosymbolic tag to steer generations ---
+def _evolve_field(psi: np.ndarray, align: np.ndarray, kernel: np.ndarray,
+                  dt: float = 1.0, lam: float = 0.008, decay: float = 0.001) -> np.ndarray:
+    # Complex field evolution (numerical, fast)
+    dpsi = dt * (-kernel @ psi + align * psi) - decay * psi
+    return psi + dpsi
+
+def _binding_energy(phi: np.ndarray, B: np.ndarray) -> float:
+    # ⟨Φ|B|Φ⟩ averaged
+    B = (B + B.T.conj()) / 2.0
+    val = np.real(np.einsum("i,ij,j->", np.conj(phi), B, phi))
+    return float(val)
+
+def build_cognitive_tag(prompt: str) -> str:
+    # Deterministic small system to derive a guidance tag from current prompt text
+    seed = int(hashlib.sha256(prompt.encode("utf-8")).hexdigest(), 16) % (2**32)
+    rng = np.random.default_rng(seed)
+    N = 96
+    psi = np.exp(1j * np.linspace(0, 2 * np.pi, N))
+    align = np.tanh(rng.normal(size=N)).astype(np.float64)
+    x = np.arange(N)
+    kernel = np.exp(-(np.subtract.outer(x, x) ** 2) / (2 * (18.0 ** 2)))
+
+    for _ in range(3):
+        psi = _evolve_field(psi, align, kernel)
+
+    # binding with a weak skew-Hermitian part
+    B = np.eye(N, dtype=np.complex128) + 1j * np.triu(np.ones((N, N))) * 0.01
+    E = _binding_energy(psi, B)
+    tag = f"⟨ψ⟩={np.mean(psi).real:.3f}|E={E:.3f}"
+    return f"[cog:{tag}]"
+
+
+# --- Advanced llama invocation with safety biases & decoding controls (drop-in replacement) ---
 def tokenize_and_generate(chunk, token, max_tokens, chunk_size, temperature=1.0, top_p=0.9):
     try:
-        inputs = llm(
-            f"[{token}] {chunk}",
+        # Light logit bias to avoid model "role-play" tokens leaking
+        logit_bias = {}
+        try:
+            for bad in ("system:", "assistant:", "user:"):
+                toks = llm.tokenize(bad.encode("utf-8"), add_bos=False)
+                if toks:
+                    logit_bias[int(toks[0])] = -2.0
+        except Exception:
+            logit_bias = {}
+
+        out = llm(
+            prompt=f"[{token}] {chunk}",
             max_tokens=min(max_tokens, chunk_size),
-            temperature=temperature,
-            top_p=top_p
+            temperature=float(max(0.2, min(1.5, temperature))),
+            top_p=float(max(0.2, min(1.0, top_p))),
+            repeat_penalty=1.08,          # mild anti-repetition
+            repeat_last_n=256,
+            mirostat_mode=2,               # stable perplexity control
+            mirostat_tau=5.0,
+            mirostat_eta=0.1,
+            cache_prompt=True,
+            logit_bias=logit_bias
         )
-        if inputs is None or not isinstance(inputs, dict):
-            logger.error(f"Llama model returned invalid output for input: {chunk}")
+        if not isinstance(out, dict) or "choices" not in out or not out["choices"]:
+            logger.error("Llama returned invalid output")
             return None
-
-        choices = inputs.get('choices', [])
-        if not choices or not isinstance(choices[0], dict):
-            logger.error("No valid choices in Llama output")
-            return None
-
-        return choices[0].get('text', '')
+        return out["choices"][0].get("text", "")
     except Exception as e:
         logger.error(f"Error in tokenize_and_generate: {e}")
         return None
@@ -2019,7 +2242,6 @@ class App(customtkinter.CTk):
         
     def generate_response(self, user_input: str) -> None:
         try:
-
             if not user_input:
                 logger.error("User input is None or empty.")
                 return
@@ -2032,11 +2254,9 @@ class App(customtkinter.CTk):
             show_reflect  = "[reflect]"     in user_input.lower()
             cleaned_input = sanitize_text(user_input.replace("[pastcontext]", ""), max_len=2048)
 
-  
-            blob             = TextBlob(cleaned_input)
-            user_polarity    = blob.sentiment.polarity
-            user_subjectivity= blob.sentiment.subjectivity
-
+            blob              = TextBlob(cleaned_input)
+            user_polarity     = blob.sentiment.polarity
+            user_subjectivity = blob.sentiment.subjectivity
 
             past_context = ""
             if use_context:
@@ -2048,7 +2268,6 @@ class App(customtkinter.CTk):
                         f"User: {i['user_message']}\nAI:   {i['ai_response']}"
                         for i in interactions
                     )[-1500:]
-
 
             lat    = float(self.latitude_entry.get().strip() or "0")
             lon    = float(self.longitude_entry.get().strip() or "0")
@@ -2127,14 +2346,12 @@ Make it coherent, actionable, and reflective of ethical reasoning.
 
 
     """.strip()
-
-
             candidate_rollouts = []
             for _ in range(4):
                 sample = self._policy_sample(bias_factor)
                 temp, top_p = sample["temperature"], sample["top_p"]
 
-
+                # main
                 response = llama_generate(
                     dyson_prompt,
                     weaviate_client=self.client,
@@ -2145,26 +2362,23 @@ Make it coherent, actionable, and reflective of ethical reasoning.
                 if not response:
                     continue
 
+                # counterfactuals
                 cf1 = llama_generate(dyson_prompt, self.client, cleaned_input,
-                                      temperature=max(0.2, 0.8*temp), top_p=top_p)
+                                     temperature=max(0.2, 0.8*temp), top_p=top_p)
                 cf2 = llama_generate(dyson_prompt, self.client, cleaned_input,
-                                      temperature=min(1.5, 1.2*temp), top_p=min(1.0, 1.1*top_p))
+                                     temperature=min(1.5, 1.2*temp), top_p=min(1.0, 1.1*top_p))
 
-                main_hist = _token_hist(response)
-                cf_hist   = _token_hist(cf1 or "") + _token_hist(cf2 or "")
-                for k in cf_hist:
-                    cf_hist[k] /= 2.0
-
-                meal_penalty = JS_LAMBDA * _js_divergence(main_hist, cf_hist)
-                task_reward  = evaluate_candidate(response, user_polarity, cleaned_input)
-                total_reward = task_reward - meal_penalty
+                # reward (task - MEAL-JS)
+                total_reward = compute_meal_js_reward(
+                    response, cf1, cf2, user_polarity, cleaned_input, gamma=JS_LAMBDA
+                )
 
                 sample.update({
-                    "response":      response,
-                    "reward":        total_reward,
-                    "meal_penalty":  meal_penalty,
-                    "bias_factor":   bias_factor,
-                    "prompt_used":   dyson_prompt
+                    "response":        response,
+                    "counterfactuals": [cf1 or "", cf2 or ""],
+                    "reward":          total_reward,
+                    "bias_factor":     bias_factor,
+                    "prompt_used":     dyson_prompt
                 })
                 candidate_rollouts.append(sample)
 
@@ -2172,14 +2386,20 @@ Make it coherent, actionable, and reflective of ethical reasoning.
                 self.response_queue.put({'type': 'text', 'data': '[Dyson QPU: No viable rollouts]'})
                 return
 
-            best          = max(candidate_rollouts, key=lambda c: c["reward"])
-            response_text = best["response"]
-            final_reward  = best["reward"]
-            final_temp    = best["temperature"]
-            final_top_p   = best["top_p"]
-            meal_penalty  = best["meal_penalty"]
-            prompt_snap   = best["prompt_used"]
+            best = mbr_select_with_js(candidate_rollouts, js_reg_lambda=JS_LAMBDA)
 
+            response_text = best["response"]
+            final_reward  = best.get("reward", 0.0)
+            final_temp    = best.get("temperature", 1.0)
+            final_top_p   = best.get("top_p", 0.9)
+            mbr_score     = best.get("mbr_score", 0.0)
+            prompt_snap   = best.get("prompt_used", dyson_prompt)
+
+
+            try:
+                self._policy_update(candidate_rollouts, learning_rate=self.pg_learning_rate)
+            except Exception as e:
+                logger.warning(f"[PG] update failed: {e}")
 
             reasoning_trace = f"""
     [DYSON NODE SELF-REFLECTION TRACE]
@@ -2200,7 +2420,6 @@ Make it coherent, actionable, and reflective of ethical reasoning.
             save_bot_response(bot_id, final_output)
             self.response_queue.put({'type': 'text', 'data': final_output})
 
-
             try:
                 self.quantum_memory_osmosis(cleaned_input, final_output)
             except Exception as e:
@@ -2218,7 +2437,7 @@ Make it coherent, actionable, and reflective of ethical reasoning.
                         "response":         final_output,
                         "reasoning_trace":  reasoning_trace,
                         "prompt_snapshot":  prompt_snap,
-                        "meal_js":          meal_penalty,
+                        "meal_js":          best.get("mbr_score", 0.0),  # store selection cost
                         "z_state":          {"z0": z0, "z1": z1, "z2": z2},
                         "entropy":          entropy,
                         "bias_factor":      bias_factor,
@@ -2233,7 +2452,7 @@ Make it coherent, actionable, and reflective of ethical reasoning.
                 logger.warning(f"[Weaviate Log Error] {e}")
 
         except Exception as e:
-            logger.error(f"[Gamma‑13X Fatal Error] {e}")
+            logger.error(f"[Gamma-13X Fatal Error] {e}")
             self.response_queue.put({'type': 'text', 'data': f"[Dyson QPU Error] {e}"})
 
     def process_generated_response(self, response_text):
