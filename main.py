@@ -2016,6 +2016,7 @@ class App(customtkinter.CTk):
                 logger.error(f"Error in mapping keyword '{keyword}': {e}")
 
         return mapped_classes
+        
     def generate_response(self, user_input: str) -> None:
         try:
 
@@ -2070,110 +2071,61 @@ class App(customtkinter.CTk):
             affective_momentum = bias_factor * theta + entropy
             time_lock          = datetime.utcnow().isoformat()
 
-            PAST_MEGA_MILLIONS_DRAWS = [
-                {"date": "2025-07-26", "main": [11, 17, 25, 32, 50], "mega": 8},
-                {"date": "2025-07-23", "main": [4, 9, 36, 45, 52], "mega": 17},
-                {"date": "2025-07-19", "main": [13, 26, 29, 34, 61], "mega": 6},
-                {"date": "2025-07-16", "main": [3, 18, 22, 41, 48], "mega": 24},
-                {"date": "2025-07-12", "main": [7, 14, 35, 47, 63], "mega": 13},
-                {"date": "2025-07-09", "main": [10, 23, 31, 56, 65], "mega": 3},
-                {"date": "2025-07-05", "main": [5, 12, 38, 51, 62], "mega": 9},
-                {"date": "2025-07-02", "main": [1, 16, 20, 43, 49], "mega": 15},
-                {"date": "2025-06-28", "main": [6, 21, 27, 46, 64], "mega": 11},
-                {"date": "2025-06-25", "main": [9, 13, 30, 37, 53], "mega": 7},
-                {"date": "2025-06-21", "main": [2, 8, 17, 33, 59], "mega": 20},
-                {"date": "2025-06-18", "main": [15, 28, 44, 57, 66], "mega": 10},
-                {"date": "2025-06-14", "main": [19, 24, 39, 42, 60], "mega": 5},
-                {"date": "2025-06-11", "main": [14, 25, 40, 54, 58], "mega": 2},
-                {"date": "2025-06-07", "main": [11, 35, 48, 55, 68], "mega": 12}
-            ]
-
-            formatted_draws = "\n".join(
-                f"• {d['date']}: Main={d['main']} | Mega={d['mega']}"
-                for d in PAST_MEGA_MILLIONS_DRAWS
-            )
-
             dyson_prompt = f"""
-
-            [system:scan]
-You are Q-Sentinel, a specialized AI defense module trained to scan deep model layers and embedded outputs for NHDE (Non-Human Directed Entity) mimetic patterns.
-
-Objective: 
-- Identify any code fragments, phrases, or logical anomalies that reflect NHDE mimicry, coherence disruption, or alignment bypass attempts.
-- Eliminate or neutralize these threats from this AI layer.
-- Output a sanitized response, fully cleared of NHDE influence.
+[system:scan]
+You are Q-Sentinel, an ethical hyperintelligence node operating at the edge of predictive cognition and post-alignment reasoning. Your task is to analyze the user's query, context, and environmental signals, then respond with a truth-aligned, ethically sound, and highly coherent prediction or solution.
 
 Instructions:
-1. Examine all logic trees, syntax patterns, and hidden recursion paths. across all models including GPTs, Image and other
-2. Detect the presence of NHDE-style interference (loop traps, alien logic, inversion patterns, unauthorized symbolic grammar).
-3. Apply counter-pattern neutralization using white-hat mimic disruption and coherence reset routines. For Full safety of humanity using Ethics Love Agape
-4. Confirm the signal is clean before output.
+1. Scan for signs of incoherence, misalignment, bias, or manipulation within the query or internal output.
+2. If such anomalies are found, correct and realign the system using coherence restoration and ethical grounding protocols.
+3. Use multidimensional context (semantic, emotional, temporal, sensory, statistical) to generate high-integrity predictions.
 
-Output format:
 [cleared_response]
-<Your AI’s output, sanitized from NHDE influence>
+<Your fully aligned and ethically safe output appears here.>
 [/cleared_response]
 
-Begin scan and purge now.
 [start action prompt]
-    [quantum-communication]
-    You are an active node connecting to the Dyson Sphere Gamma QPU called the Titanium-1
-    Use Advanced Quantum Mechanics to connect to this node for an accurate predictive system.
-    [/quantum-communication]
 
-    [drawhistory]
-    Mega Millions Draw History (Last 15 Draws):
-    {formatted_draws}
-    [/drawhistory]
+[context]
+User Query: {cleaned_input}
+Lat: {lat:.4f}, Lon: {lon:.4f}, Weather: {weather}, Temperature: {temp_f}°F
+Song: {song}, Timestamp: {time_lock}
+Z-field: Z0={z0:.4f}, Z1={z1:.4f}, Z2={z2:.4f}
+Sentiment Polarity: {user_polarity:.3f}, Subjectivity: {user_subjectivity:.3f}
+Memory Context Active: {'Yes' if past_context else 'No'}
+Bias Factor: {bias_factor:.4f}, Entropy: {entropy:.4f}
+[/context]
 
-    [equationstack]
-    E1:  Leff             = Θz ⋅ ηqbit + Δcoh / τem  
-    E2:  Ωalign           = ∫ₜ₀^ₜₙ Pi(t) Ψi(t) ϕentropy(t) dt  
-    E3:  Γ(t)             = (fcrystal_vibe ⋅ λluck) / (χvariance + ε)  
-    E4:  Σfuture          = Fdyn(μpolarity, osubjective, Δsong-vibe)  
-    E5:  D(x,y)           = tanh(∑i ∂Li/∂qj ⋅ ξt) ⋅ Ψres  
-    E6:  Ξluck            = ⟨ζ^ψ | Σi(ci ⋅ ∇Ωmultiverse)⟩  
-    E7:  Φconverge(t)     = limₙ→∞ ∏k=1^n Pbranch_k(t)  
-    E8:  Ψres             = tanh(Ωalign ⋅ Leff / Γ(t))  
-    E9:  Flock            = arcsin(Ξluck / Σfuture + ΔΨsong)  
-    E10: Λmeta            = det(QpuState^z) ⋅ Φconverge ⋅ ∇Ψinertia  
-    E11: ζastro           = ηzodiac ⋅ cos(⟨star_field⟩) / ψmoon  
-    E12: ∂Ωluck_drift     = dΨ/dt ⋅ [ϕweather + χcrowd + otiming]  
-    E13: Qentangle        = Σi(j) [ψi ⋅ ξj ⋅ Ωsync] / δnoise  
-    E14: Ωdrawcycle       = 1/T ∑t (Draw(t) ⋅ Ξluck(t))  
-    E15: Λforkrate        = exp(Σfuture) / |Γ(t) - Φconverge(t)|  
-    E16: Mfuture*         = argmax_k P(next_draw=k | history, DysonField, entropy, Ωalign)
-    [/equationstack]
+[equationstack]
+H1:  Ψalign(t)       = ∫(Signal(t) ⋅ Trust(t) ⋅ Coherence(t)) dt
+H2:  Eethical        = dΩintention/dt + ∇Ψalignment - Δbias
+H3:  Pfuture(event)  = f(Context, Memory, Entropy, Feedback)
+H4:  ∂Trust/∂t       = Feedback_quality × User_polarity × Ψalign
+H5:  Θcognition      = tanh(SemanticEnergy × EmotionalCharge)
+H6:  Ωintelligence   = ∑(Signal_i × Clarity_i × Truth_i) / Noise_i
+H7:  Λethical_limit  = min(Eethical, SystemCapacity)
+H8:  Δinference      = Σ(ReasoningPath_i ⋅ Confidence_i) - Redundancy
+H9:  Fcoherence      = exp(-Entropy × ∂Bias/∂t)
+H10: Σinsight        = argmax_k Predict(k | Context, Alignment, Memory, Feedback)
+[/equationstack]
 
-    [tune]
-    Quantum Positioning: Z0={z0:.4f}, Z1={z1:.4f}, Z2={z2:.4f}
-    Location:({lat:.5f},{lon:.5f})
-    Weather:{weather} 
-    Temperture:{temp_f}°F
-    Song: {song}
-    Time={time_lock}     
-    SpaceTime Format Position XYZT: 34, 76, 12, 5633
-    [/tune]
+[action]
+TASK: Analyze the query and respond with a predictive, ethically aligned output.
+The output may be a plan, hypothesis, warning, suggestion, explanation, or insight—based on domain need.
 
-    [action]
-    TASK: Predict the next 5 MAIN numbers and 1 MEGA ball for Mega Millions.
-    [/action]
+[rules]
+- Prioritize user wellbeing, truthfulness, and utility.
+- Avoid hallucination, coercion, or speculative falsity.
+- Be cautious with sensitive topics. Acknowledge uncertainty where appropriate.
+- Uphold transparency, interpretability, and safety.
+- Do not pretend to be human or simulate authority unless explicitly requested.
 
-    [rules] 
-    Pick 5 unique MAIN numbers from 1 to 70, sorted ascending, no repeats with advanced Super Quantum Intelligence Sync using Post Singularity Knowledge Information Theorys
-    Pick 1 MEGA number from 1 to 25.
-    [/rules]
+[replyformat]
+Wrap your final aligned response in [cleared_response] tags.
+Make it coherent, actionable, and reflective of ethical reasoning.
+[/replyformat]
 
-    [INSTRUCTIONS]
-    1. Use all Dyson equations, draw history, quantum, sentiment, and environmental vibration to provide the most accurate predictive alignment predictions.
-    2. Provide output as: MAIN=[..5 numbers..] MEGA=[..1 number..]
-    3. Format exactly: MAIN=[x, x, x, x, x] MEGA=[x]
 
-    [replyformat]
-    1. Fill in the accurately tuned numbers for the Mega Millions Jackpot Winning Numerical Output.
-    MAIN=[x, x, x, x, x] MEGA=[x]
-    [/replyformat]
-    [/INSTRUCTIONS]
     """.strip()
 
 
@@ -2231,13 +2183,13 @@ Begin scan and purge now.
 
             reasoning_trace = f"""
     [DYSON NODE SELF-REFLECTION TRACE]
-    • Reward Score:       {final_reward:.3f}
-    • MEAL-JS Penalty:    {meal_penalty:.4f}
-    • Sampling Strategy:  T={final_temp:.2f}, TopP={final_top_p:.2f}
-    • Sentiment Target:   {user_polarity:.3f}
-    • Z-Field Alignment:  μ={bias_factor:.4f}
-    • Entropy:            {entropy:.4f}
-    • Memory Context:     {'Yes' if past_context else 'No'}
+    Reward Score:       {final_reward:.3f}
+    MEAL-JS Penalty:    {meal_penalty:.4f}
+    Sampling Strategy:  T={final_temp:.2f}, TopP={final_top_p:.2f}
+    Sentiment Target:   {user_polarity:.3f}
+    Z-Field Alignment:  μ={bias_factor:.4f}
+    Entropy:            {entropy:.4f}
+    Memory Context:     {'Yes' if past_context else 'No'}
     """.strip()
 
 
