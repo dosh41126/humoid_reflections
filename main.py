@@ -970,7 +970,7 @@ def is_valid_uuid(uuid_to_test, version=5):
     
 def fetch_live_weather(lat: float, lon: float, fallback_temp_f: float = 70.0) -> tuple[float, int, bool]:
     try:
-        import httpx 
+
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
         with httpx.Client(timeout=5.0) as client:
             response = client.get(url)
@@ -985,70 +985,96 @@ def fetch_live_weather(lat: float, lon: float, fallback_temp_f: float = 70.0) ->
         logger.warning(f"[Weather] Fallback due to error: {e}")
         return fallback_temp_f, 0, False
 
-dev = qml.device("default.qubit", wires=3)
+dev7 = qml.device("default.qubit", wires=7, shots=None)
 
-@qml.qnode(dev)
-def rgb_quantum_gate(
+def clamp01(x): 
+    return float(min(1.0, max(0.0, x)))
+
+def get_cpu_ram_usage():
+    try:
+        cpu = psutil.cpu_percent()
+        ram = psutil.virtual_memory().percent
+        return cpu, ram
+    except Exception:
+        return None, None
+
+def _apply_pure_rgb(
     r, g, b,
-    cpu_usage,
-    tempo=120,
-    lat=0.0,
-    lon=0.0,
+    cpu_usage=10.0, ram_usage=10.0,
+    tempo=120.0,
+    lat=0.0, lon=0.0,
     temperature_f=70.0,
     weather_scalar=0.0,
-    z0_hist=0.0,
-    z1_hist=0.0,
-    z2_hist=0.0
+    z0_hist=0.0, z1_hist=0.0, z2_hist=0.0
 ):
 
-    r, g, b = [min(1.0, max(0.0, x)) for x in (r, g, b)]
-    cpu_scale = max(0.05, cpu_usage)
+    r = clamp01(r); g = clamp01(g); b = clamp01(b)
+    cpu_scale = max(0.05, clamp01(cpu_usage/100.0))
+    ram_scale = max(0.05, clamp01(ram_usage/100.0))
+    tempo_norm = clamp01(tempo/200.0)
+    lat_rad = np.deg2rad(lat % 360.0)
+    lon_rad = np.deg2rad(lon % 360.0)
+    temp_norm = clamp01((temperature_f - 30.0)/100.0)
+    weather_mod = clamp01(weather_scalar)
+    qml.RY(np.pi * r * cpu_scale, wires=0)
+    qml.RY(np.pi * g * cpu_scale, wires=1)
+    qml.RY(np.pi * b * cpu_scale, wires=2)
 
-    tempo_norm = min(1.0, max(0.0, tempo / 200))
-    lat_rad = np.deg2rad(lat % 360)
-    lon_rad = np.deg2rad(lon % 360)
-    temp_norm = min(1.0, max(0.0, (temperature_f - 30) / 100))
-    weather_mod = min(1.0, max(0.0, weather_scalar))
+    qml.RY(np.pi * cpu_scale, wires=3)
+    qml.RY(np.pi * ram_scale, wires=4)
+    qml.RY(np.pi * tempo_norm, wires=5)
+    loc_phase = clamp01(0.25 + 0.25*np.sin(lat_rad) + 0.25*np.cos(lon_rad) + 0.25*temp_norm)
+    qml.RY(np.pi * loc_phase, wires=6)
 
-    coherence_gain = 1.0 + tempo_norm - weather_mod + 0.3 * (1 - abs(0.5 - temp_norm))
+    for c in (0, 1, 2):
+        qml.CRX(np.pi * 0.25 * tempo_norm, wires=[5, c])   # tempo -> color
+        qml.CRZ(np.pi * 0.25 * weather_mod, wires=[5, c])  # weather -> color (phase)
+        qml.CRZ(np.pi * 0.30 * cpu_scale, wires=[3, c])    # cpu -> color (phase)
+        qml.CRY(np.pi * 0.20 * ram_scale, wires=[4, c])    # ram -> color
+        qml.CRZ(np.pi * 0.15 * loc_phase, wires=[6, c])    # location/temp -> color
 
-    q_r = r * np.pi * cpu_scale * coherence_gain
-    q_g = g * np.pi * cpu_scale * (1.0 - weather_mod + temp_norm)
-    q_b = b * np.pi * cpu_scale * (1.0 + weather_mod - temp_norm)
+    feedback = (z0_hist + z1_hist + z2_hist)
+    qml.RZ(np.pi * 0.40 * feedback, wires=0)
+    qml.RZ(-np.pi * 0.20 * feedback, wires=1)
+    qml.RZ(np.pi * 0.30 * feedback, wires=2)
+    qml.CNOT(wires=[0, 1]); qml.CNOT(wires=[1, 2]); qml.CNOT(wires=[2, 3])
+    qml.CNOT(wires=[3, 4]); qml.CNOT(wires=[4, 5]); qml.CNOT(wires=[5, 6])
 
-    qml.RX(q_r, wires=0)
-    qml.RY(q_g, wires=1)
-    qml.RZ(q_b, wires=2)
+@qml.qnode(dev7)
+def rgb_probs(
+    r, g, b,
+    cpu_usage=10.0, ram_usage=10.0,
+    tempo=120.0,
+    lat=0.0, lon=0.0,
+    temperature_f=70.0,
+    weather_scalar=0.0,
+    z0_hist=0.0, z1_hist=0.0, z2_hist=0.0
+):
+    _apply_pure_rgb(r, g, b, cpu_usage, ram_usage, tempo, lat, lon, temperature_f,
+                    weather_scalar, z0_hist, z1_hist, z2_hist)
+    return qml.probs(wires=range(7))
 
-    qml.PhaseShift(lat_rad * tempo_norm, wires=0)
-    qml.PhaseShift(lon_rad * (1 - weather_mod), wires=1)
-
-    qml.CRX(temp_norm * np.pi * coherence_gain, wires=[2, 0])
-    qml.CRY(tempo_norm * np.pi, wires=[1, 2])
-    qml.CRZ(weather_mod * np.pi, wires=[0, 2])
-
-    entropy_cycle = np.sin(cpu_scale * np.pi * 2)
-    qml.RX(entropy_cycle * np.pi * 0.5, wires=1)
-
-    feedback_phase = (z0_hist + z1_hist + z2_hist) * np.pi
-    qml.PhaseShift(feedback_phase / 3.0, wires=0)
-    qml.PhaseShift(-feedback_phase / 2.0, wires=2)
-
-    if 0.3 < weather_mod < 0.6:
-        qml.IsingYY(temp_norm * np.pi * 0.5, wires=[0, 2])
-
-    if weather_mod > 0.5:
-        qml.Toffoli(wires=[0, 1, 2])
-        qml.AmplitudeDamping(0.1 * weather_mod, wires=2)
-    else:
-        qml.CNOT(wires=[0, 1])
-        qml.CNOT(wires=[1, 2])
-
+@qml.qnode(dev7)
+def rgb_expvals(
+    r, g, b,
+    cpu_usage=10.0, ram_usage=10.0,
+    tempo=120.0,
+    lat=0.0, lon=0.0,
+    temperature_f=70.0,
+    weather_scalar=0.0,
+    z0_hist=0.0, z1_hist=0.0, z2_hist=0.0
+):
+    _apply_pure_rgb(r, g, b, cpu_usage, ram_usage, tempo, lat, lon, temperature_f,
+                    weather_scalar, z0_hist, z1_hist, z2_hist)
     return (
-        qml.expval(qml.PauliZ(0)),
-        qml.expval(qml.PauliZ(1)),
-        qml.expval(qml.PauliZ(2)),
+        qml.expval(qml.PauliZ(0)),  # R
+        qml.expval(qml.PauliZ(1)),  # G
+        qml.expval(qml.PauliZ(2)),  # B
     )
+
+def expvals_to_rgb01(z_tuple):
+    z = np.asarray(z_tuple, dtype=float)
+    return tuple((1.0 - z) * 0.5)
 
 def get_current_multiversal_time():
     current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
