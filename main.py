@@ -40,6 +40,19 @@ import httpx
 import math
 from typing import List, Tuple
 from math import log2
+try:
+    # Post-quantum KEM (Kyber512)
+    from pqcrypto.kem.kyber512 import generate_keypair, encapsulate, decapsulate
+except Exception:
+    generate_keypair = encapsulate = decapsulate = None  # graceful fallback
+
+HYBRIDG_ENABLE           = True
+HYBRIDG_KEM              = "kyber512"
+HYBRIDG_VERSION          = 1
+HYBRIDG_WRAP_NONCE_SIZE  = 12
+HYBRIDG_PUB_PATH         = "secure/kyber_pub.bin"
+HYBRIDG_PRIV_PATH        = "secure/kyber_priv.bin"
+
 
 ARGON2_TIME_COST_DEFAULT = 3          
 ARGON2_MEMORY_COST_KIB    = 262144   
@@ -269,6 +282,19 @@ class AdvancedHomomorphicVectorMemory:
         dec = enclave.track(self.decrypt_embedding(enc_a))
         return self.cosine(dec, query_vec)
 
+def _hkdf_sha256(ikm: bytes, *, salt: bytes, info: bytes, length: int = 32) -> bytes:
+    if salt is None:
+        salt = b"\x00" * 32
+    prk = hmac.new(salt, ikm, hashlib.sha256).digest()
+    okm = b""
+    t = b""
+    counter = 1
+    while len(okm) < length:
+        t = hmac.new(prk, t + info + bytes([counter]), hashlib.sha256).digest()
+        okm += t
+        counter += 1
+    return okm[:length]
+
 class SecureKeyManager:
 
     def __init__(
@@ -302,8 +328,87 @@ class SecureKeyManager:
         for ver, master_secret in self._keys.items():
             self._derived_keys[ver] = self._derive_key(master_secret, vault_salt)
 
-    def _get_passphrase(self) -> bytes:
+        # --- HybridG / Kyber state ---
+        self._pq_pub:  bytes | None = None
+        self._pq_priv: bytes | None = None
+        self._ensure_pq_keys()
+        self._load_pq_keys()
 
+    def _ensure_pq_keys(self):
+        if not HYBRIDG_ENABLE or generate_keypair is None:
+            return
+        try:
+            os.makedirs("secure", exist_ok=True)
+            if not (os.path.exists(HYBRIDG_PUB_PATH) and os.path.exists(HYBRIDG_PRIV_PATH)):
+                pk, sk = generate_keypair()
+                with open(HYBRIDG_PUB_PATH, "wb") as f:
+                    f.write(pk)
+                with open(HYBRIDG_PRIV_PATH, "wb") as f:
+                    f.write(sk)
+                logging.info("[HybridG] Generated Kyber512 keypair.")
+        except Exception as e:
+            logging.warning(f"[HybridG] Could not ensure PQ keys: {e}")
+
+    def _load_pq_keys(self):
+        try:
+            if os.path.exists(HYBRIDG_PUB_PATH):
+                with open(HYBRIDG_PUB_PATH, "rb") as f:
+                    self._pq_pub = f.read()
+            if os.path.exists(HYBRIDG_PRIV_PATH):
+                with open(HYBRIDG_PRIV_PATH, "rb") as f:
+                    self._pq_priv = f.read()
+        except Exception as e:
+            logging.warning(f"[HybridG] Could not load PQ keys: {e}")
+            self._pq_pub, self._pq_priv = None, None
+
+    def _hybridg_available(self, for_decrypt: bool) -> bool:
+
+        if not HYBRIDG_ENABLE or encapsulate is None or decapsulate is None:
+            return False
+        if for_decrypt:
+            return self._pq_priv is not None
+        return self._pq_pub is not None
+
+    def _hybridg_wrap_key(self, cek: bytes, *, aad: bytes, key_version: int) -> dict:
+
+        ct_kem, shared_secret = encapsulate(self._pq_pub)  # (ciphertext, shared key)
+        salt = os.urandom(16)
+        info = _aad_str("hybridg", f"k{key_version}", str(HYBRIDG_VERSION)) + b"|" + aad
+        kek  = _hkdf_sha256(shared_secret, salt=salt, info=info, length=32)
+
+        wrap_nonce = os.urandom(HYBRIDG_WRAP_NONCE_SIZE)
+        wrap_aad   = _aad_str("hybridg-wrap", f"k{key_version}")
+        wrap_ct    = AESGCM(kek).encrypt(wrap_nonce, cek, wrap_aad)
+
+        return {
+            "ver": HYBRIDG_VERSION,
+            "kem": HYBRIDG_KEM,
+            "salt": base64.b64encode(salt).decode(),
+            "ct_kem": base64.b64encode(ct_kem).decode(),
+            "wrap_nonce": base64.b64encode(wrap_nonce).decode(),
+            "wrap_ct": base64.b64encode(wrap_ct).decode(),
+        }
+
+    def _hybridg_unwrap_key(self, pq_blob: dict, *, aad: bytes, key_version: int) -> bytes:
+
+        if pq_blob.get("kem") != HYBRIDG_KEM:
+            raise ValueError("Unsupported KEM in HybridG envelope.")
+        salt       = base64.b64decode(pq_blob["salt"])
+        ct_kem     = base64.b64decode(pq_blob["ct_kem"])
+        wrap_nonce = base64.b64decode(pq_blob["wrap_nonce"])
+        wrap_ct    = base64.b64decode(pq_blob["wrap_ct"])
+
+        shared_secret = decapsulate(ct_kem, self._pq_priv)
+        info = _aad_str("hybridg", f"k{key_version}", str(pq_blob.get("ver", 1))) + b"|" + aad
+        kek  = _hkdf_sha256(shared_secret, salt=salt, info=info, length=32)
+
+        wrap_aad = _aad_str("hybridg-wrap", f"k{key_version}")
+        cek = AESGCM(kek).decrypt(wrap_nonce, wrap_ct, wrap_aad)
+        return cek
+
+
+
+    def _get_passphrase(self) -> bytes:
         pw = os.getenv(VAULT_PASSPHRASE_ENV)
         if pw is None or pw == "":
             pw = base64.b64encode(os.urandom(32)).decode()
@@ -314,11 +419,10 @@ class SecureKeyManager:
         return pw.encode("utf-8")
 
     def _derive_vault_key(self, passphrase: bytes, salt: bytes) -> bytes:
-
         return hash_secret_raw(
             secret=passphrase,
             salt=salt,
-            time_cost=max(self.time_cost, 3),   
+            time_cost=max(self.time_cost, 3),
             memory_cost=max(self.memory_cost, 262144),
             parallelism=max(self.parallelism, 1),
             hash_len=self.hash_len,
@@ -326,7 +430,6 @@ class SecureKeyManager:
         )
 
     def _derive_key(self, master_secret: bytes, salt: bytes) -> bytes:
-
         return hash_secret_raw(
             secret=master_secret,
             salt=salt,
@@ -338,15 +441,13 @@ class SecureKeyManager:
         )
 
     def _ensure_vault(self):
-
         if not os.path.exists("secure"):
             os.makedirs("secure", exist_ok=True)
         if os.path.exists(self.vault_path):
             return
 
-
         salt          = os.urandom(16)
-        master_secret = os.urandom(32) 
+        master_secret = os.urandom(32)
 
         vault_body = {
             "version": VAULT_VERSION,
@@ -364,7 +465,6 @@ class SecureKeyManager:
         self._write_encrypted_vault(vault_body)
 
     def _write_encrypted_vault(self, vault_body: dict):
-
         plaintext = json.dumps(vault_body, indent=2).encode("utf-8")
         salt      = base64.b64decode(vault_body["salt"])
 
@@ -376,7 +476,7 @@ class SecureKeyManager:
 
         on_disk = {
             "vault_format": VAULT_VERSION,
-            "salt": vault_body["salt"],  
+            "salt": vault_body["salt"],
             "nonce": base64.b64encode(nonce).decode(),
             "ciphertext": base64.b64encode(ct).decode(),
         }
@@ -384,7 +484,6 @@ class SecureKeyManager:
             json.dump(on_disk, f, indent=2)
 
     def _load_vault(self) -> dict:
-
         with open(self.vault_path, "r") as f:
             data = json.load(f)
 
@@ -405,7 +504,7 @@ class SecureKeyManager:
             }
             self._write_encrypted_vault(vault_body)
             return vault_body
- 
+
         salt      = base64.b64decode(data["salt"])
         nonce     = base64.b64decode(data["nonce"])
         ct        = base64.b64decode(data["ciphertext"])
@@ -430,14 +529,32 @@ class SecureKeyManager:
         if aad is None:
             aad = _aad_str("global", f"k{key_version}")
 
+        # Hybrid path: CEK + PQ wrap
+        if self._hybridg_available(for_decrypt=False):
+            cek   = os.urandom(32)
+            nonce = os.urandom(DATA_NONCE_SIZE)
+            ct    = AESGCM(cek).encrypt(nonce, plaintext.encode("utf-8"), aad)
+
+            pq_env = self._hybridg_wrap_key(cek, aad=aad, key_version=key_version)
+
+            token = {
+                "v": VAULT_VERSION,
+                "k": key_version,
+                "aad": aad.decode("utf-8"),
+                "n": base64.b64encode(nonce).decode(),
+                "ct": base64.b64encode(ct).decode(),
+                "pq": pq_env,  # HybridG envelope
+            }
+            return json.dumps(token, separators=(",", ":"))
+
+        # Fallback: derived key
         key    = self._derived_keys[key_version]
         aesgcm = AESGCM(key)
         nonce  = os.urandom(DATA_NONCE_SIZE)
         ct     = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), aad)
-
         token = {
-            "v": VAULT_VERSION,        
-            "k": key_version,          
+            "v": VAULT_VERSION,
+            "k": key_version,
             "aad": aad.decode("utf-8"),
             "n": base64.b64encode(nonce).decode(),
             "ct": base64.b64encode(ct).decode(),
@@ -456,12 +573,21 @@ class SecureKeyManager:
                 logging.warning("[SecureKeyManager] Invalid JSON token; returning raw.")
                 return token
 
-            v   = int(meta.get("v", 1))
             ver = int(meta.get("k", self.active_version))
             aad = meta.get("aad", "global").encode()
             n   = base64.b64decode(meta["n"])
             ct  = base64.b64decode(meta["ct"])
 
+            # HybridG path if present and private key available
+            if "pq" in meta and self._hybridg_available(for_decrypt=True):
+                try:
+                    cek = self._hybridg_unwrap_key(meta["pq"], aad=aad, key_version=ver)
+                    pt  = AESGCM(cek).decrypt(n, ct, aad)
+                    return pt.decode("utf-8")
+                except Exception as e:
+                    logging.warning(f"[HybridG] PQ decrypt failed; attempting legacy fallback: {e}")
+
+            # Legacy fallback (derived key)
             key = self._derived_keys.get(ver)
             if key is None:
                 raise ValueError(f"No key for version {ver}; cannot decrypt.")
@@ -472,17 +598,16 @@ class SecureKeyManager:
         try:
             raw   = base64.b64decode(token.encode())
             nonce = raw[:DATA_NONCE_SIZE]
-            ct    = raw[DATA_NONCE_SIZE:]
+            ctb   = raw[DATA_NONCE_SIZE:]
             key   = self._derived_keys[self.active_version]
             aesgcm = AESGCM(key)
-            pt     = aesgcm.decrypt(nonce, ct, None)
+            pt     = aesgcm.decrypt(nonce, ctb, None)
             return pt.decode("utf-8")
         except Exception as e:
             logging.warning(f"[SecureKeyManager] Legacy decrypt failed: {e}")
             return token
 
     def add_new_key_version(self) -> int:
-
         vault_body = self._load_vault()
         keys = vault_body["keys"]
         existing_versions = {int(k["version"]) for k in keys}
@@ -505,7 +630,6 @@ class SecureKeyManager:
         return new_version
 
     def _entropy_bits(self, secret_bytes: bytes) -> float:
-
         if not secret_bytes:
             return 0.0
         counts = Counter(secret_bytes)
@@ -517,7 +641,6 @@ class SecureKeyManager:
         return H
 
     def _resistance_score(self, secret_bytes: bytes) -> float:
-
         dist_component = 0.0
         try:
             arr_candidate = np.frombuffer(secret_bytes, dtype=np.uint8).astype(np.float32)
@@ -540,7 +663,6 @@ class SecureKeyManager:
                         noise_sigma: float = 12.0,
                         alpha: float = 1.0,
                         beta: float = 2.0) -> int:
-
         vault_meta = self._load_vault()
         base_secret = None
         for kv in vault_meta["keys"]:
@@ -573,7 +695,6 @@ class SecureKeyManager:
         return new_version
 
     def _install_custom_master_secret(self, new_secret: bytes) -> int:
-
         vault_body = self._load_vault()
         keys = vault_body["keys"]
         existing_versions = {int(k["version"]) for k in keys}
@@ -594,7 +715,6 @@ class SecureKeyManager:
         return new_version
 
     def rotate_and_migrate_storage(self, migrate_func):
-
         new_ver = self.add_new_key_version()
         try:
             migrate_func(self)
