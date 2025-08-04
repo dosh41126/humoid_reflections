@@ -328,23 +328,40 @@ class SecureKeyManager:
         for ver, master_secret in self._keys.items():
             self._derived_keys[ver] = self._derive_key(master_secret, vault_salt)
 
-        # --- HybridG / Kyber state ---
         self._pq_pub:  bytes | None = None
         self._pq_priv: bytes | None = None
         self._ensure_pq_keys()
         self._load_pq_keys()
 
+# In class SecureKeyManager
     def _ensure_pq_keys(self):
+
         if not HYBRIDG_ENABLE or generate_keypair is None:
             return
         try:
+
             os.makedirs("secure", exist_ok=True)
+            try:
+                os.chmod("secure", 0o700)
+            except Exception:
+                pass  # best-effort on platforms that don't support chmod
+
+            # Create if either key is missing
             if not (os.path.exists(HYBRIDG_PUB_PATH) and os.path.exists(HYBRIDG_PRIV_PATH)):
                 pk, sk = generate_keypair()
+
                 with open(HYBRIDG_PUB_PATH, "wb") as f:
                     f.write(pk)
                 with open(HYBRIDG_PRIV_PATH, "wb") as f:
                     f.write(sk)
+
+                # Lock down file perms
+                try:
+                    os.chmod(HYBRIDG_PUB_PATH,  0o600)
+                    os.chmod(HYBRIDG_PRIV_PATH, 0o600)
+                except Exception:
+                    pass
+
                 logging.info("[HybridG] Generated Kyber512 keypair.")
         except Exception as e:
             logging.warning(f"[HybridG] Could not ensure PQ keys: {e}")
@@ -405,8 +422,6 @@ class SecureKeyManager:
         wrap_aad = _aad_str("hybridg-wrap", f"k{key_version}")
         cek = AESGCM(kek).decrypt(wrap_nonce, wrap_ct, wrap_aad)
         return cek
-
-
 
     def _get_passphrase(self) -> bytes:
         pw = os.getenv(VAULT_PASSPHRASE_ENV)
