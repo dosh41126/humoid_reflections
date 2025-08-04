@@ -1400,7 +1400,6 @@ def is_code_like(text):
         return True
     if re.search(r'[{[()}\]]', text) and re.search(r'=\s*|::|->|=>', text):
         return True
-    # multiple lines starting with 4+ spaces or tabs
     indented = sum(1 for ln in text.splitlines() if re.match(r'^\s{4,}|\t', ln))
     return indented >= 3
 
