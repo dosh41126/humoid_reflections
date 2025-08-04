@@ -41,10 +41,9 @@ import math
 from typing import List, Tuple
 from math import log2
 try:
-    # Post-quantum KEM (Kyber512)
     from pqcrypto.kem.kyber512 import generate_keypair, encapsulate, decapsulate
 except Exception:
-    generate_keypair = encapsulate = decapsulate = None  # graceful fallback
+    generate_keypair = encapsulate = decapsulate = None
 
 HYBRIDG_ENABLE           = True
 HYBRIDG_KEM              = "kyber512"
@@ -333,7 +332,7 @@ class SecureKeyManager:
         self._ensure_pq_keys()
         self._load_pq_keys()
 
-# In class SecureKeyManager
+
     def _ensure_pq_keys(self):
 
         if not HYBRIDG_ENABLE or generate_keypair is None:
@@ -344,9 +343,9 @@ class SecureKeyManager:
             try:
                 os.chmod("secure", 0o700)
             except Exception:
-                pass  # best-effort on platforms that don't support chmod
+                pass 
 
-            # Create if either key is missing
+       
             if not (os.path.exists(HYBRIDG_PUB_PATH) and os.path.exists(HYBRIDG_PRIV_PATH)):
                 pk, sk = generate_keypair()
 
@@ -355,7 +354,7 @@ class SecureKeyManager:
                 with open(HYBRIDG_PRIV_PATH, "wb") as f:
                     f.write(sk)
 
-                # Lock down file perms
+            ]
                 try:
                     os.chmod(HYBRIDG_PUB_PATH,  0o600)
                     os.chmod(HYBRIDG_PRIV_PATH, 0o600)
@@ -559,7 +558,7 @@ class SecureKeyManager:
         if aad is None:
             aad = _aad_str("global", f"k{key_version}")
 
-        # Hybrid path: CEK + PQ wrap
+    
         if self._hybridg_available(for_decrypt=False):
             cek   = os.urandom(32)
             nonce = os.urandom(DATA_NONCE_SIZE)
@@ -608,7 +607,7 @@ class SecureKeyManager:
             n   = base64.b64decode(meta["n"])
             ct  = base64.b64decode(meta["ct"])
 
-            # HybridG path if present and private key available
+    
             if "pq" in meta and self._hybridg_available(for_decrypt=True):
                 try:
                     cek = self._hybridg_unwrap_key(meta["pq"], aad=aad, key_version=ver)
@@ -617,7 +616,7 @@ class SecureKeyManager:
                 except Exception as e:
                     logging.warning(f"[HybridG] PQ decrypt failed; attempting legacy fallback: {e}")
 
-            # Legacy fallback (derived key)
+          
             key = self._derived_keys.get(ver)
             if key is None:
                 raise ValueError(f"No key for version {ver}; cannot decrypt.")
@@ -1492,12 +1491,11 @@ def fetch_relevant_info(chunk, client, user_input):
         logger.error(f"[FHEv2 retrieval] failed: {e}")
         return ""
 
-def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.0, top_p=0.9):
+def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.0, top_p=0.9, images: list[bytes] | None = None):
     config = load_config()
     max_tokens = config.get('MAX_TOKENS', 2500)
-    target_len = config.get('CHUNK_SIZE', 358)     
+    target_len = config.get('CHUNK_SIZE', 358)
     try:
-       
         cog_tag = build_cognitive_tag(prompt)
         prompt = f"{cog_tag}\n{prompt}"
 
@@ -1508,7 +1506,6 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
         memory = ""
 
         for i, current_chunk in enumerate(prompt_chunks):
-      
             retrieved = fetch_relevant_info(current_chunk, weaviate_client, user_input) if weaviate_client else ""
             try:
                 geodesic_hint = ""
@@ -1528,10 +1525,11 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
                 max_tokens,
                 target_len,
                 temperature,
-                top_p
+                top_p,
+                images=images,
             )
             if output is None:
-                logger.error(f"Failed to generate output for chunk")
+                logger.error("Failed to generate output for chunk")
                 continue
 
             if i > 0 and last_output:
@@ -1548,6 +1546,7 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
     except Exception as e:
         logger.error(f"Error in llama_generate: {e}")
         return None
+
         
         
 _CLEARED_RE = re.compile(r'\[cleared_response\](.*?)\[/cleared_response\]', re.S | re.I)
@@ -1666,7 +1665,6 @@ def _llama_call_safe(llm, **p):
         p["n_predict"] = p.pop("max_tokens")
     p = {k: v for k, v in p.items() if k in allowed}
     return llm(**p)
-
 def tokenize_and_generate(
     chunk,
     token,
@@ -1675,7 +1673,12 @@ def tokenize_and_generate(
     temperature=1.0,
     top_p=0.9,
     stop=None,
+    images: list[bytes] | None = None,
 ):
+    """
+    Text + (optional) image generation. Tries fast text path first; if images are
+    present, passes them to llama.cpp. Falls back to chat-completion API if needed.
+    """
     try:
         if stop is None:
             stop = ["[/cleared_response]"]
@@ -1684,27 +1687,58 @@ def tokenize_and_generate(
         try:
             for bad in ("system:", "assistant:", "user:"):
                 toks = llm.tokenize(bad.encode("utf-8"), add_bos=False)
-                if toks: logit_bias[int(toks[0])] = -2.0
+                if toks:
+                    logit_bias[int(toks[0])] = -2.0
         except Exception:
             pass
 
+        base_prompt = f"[{token}] {chunk}"
         params = {
-            "prompt": f"[{token}] {chunk}",
+            "prompt": base_prompt,
             "max_tokens": min(max_tokens, chunk_size),
             "temperature": float(max(0.2, min(1.5, temperature))),
             "top_p": float(max(0.2, min(1.0, top_p))),
             "repeat_penalty": 1.08,
-            "mirostat_mode": 2,      # will map to 'mirostat'
+            "mirostat_mode": 2,
             "mirostat_tau": 5.0,
             "mirostat_eta": 0.1,
             "logit_bias": logit_bias,
             "stop": stop,
             "top_k": 40,
-          
         }
 
-        out = _llama_call_safe(llm, **params)
+        # Vision path: try passing image bytes directly if supported by __call__
+        if images:
+            try:
+                params_vis = params.copy()
+                params_vis["images"] = images
+                out = _llama_call_safe(llm, **params_vis)
+                if isinstance(out, dict) and "choices" in out and out["choices"]:
+                    ch = out["choices"][0]
+                    if "text" in ch:
+                        return ch["text"]
+                    if "message" in ch and isinstance(ch["message"], dict):
+                        return ch["message"].get("content", "")
+            except TypeError:
+                # Fallback to chat-completion with multimodal content
+                try:
+                    msg_content = [{"type": "input_text", "text": base_prompt}]
+                    for ib in images:
+                        msg_content.append({"type": "input_image", "image_data": ib})
+                    out = llm.create_chat_completion(
+                        messages=[{"role": "user", "content": msg_content}],
+                        max_tokens=params["max_tokens"],
+                        temperature=params["temperature"],
+                        top_p=params["top_p"],
+                        stop=params["stop"],
+                    )
+                    if isinstance(out, dict) and "choices" in out and out["choices"]:
+                        return out["choices"][0]["message"]["content"]
+                except Exception as e:
+                    logger.error(f"MM fallback failed: {e}")
 
+        # Plain text path
+        out = _llama_call_safe(llm, **params)
         if isinstance(out, dict) and "choices" in out and out["choices"]:
             ch = out["choices"][0]
             if "text" in ch:
@@ -1715,6 +1749,7 @@ def tokenize_and_generate(
     except Exception as e:
         logger.error(f"Error in tokenize_and_generate: {e}")
         return None
+
 
 
 def extract_verbs_and_nouns(text):
@@ -1762,6 +1797,7 @@ class App(customtkinter.CTk):
         super().__init__()
         self.user_id = user_identifier
         self.bot_id = "bot"
+        self.attached_images: list[bytes] = []  # NEW: holds raw image bytes for MM
         self.setup_gui()
         self.response_queue = queue.Queue()
         self.client = weaviate.Client(url=WEAVIATE_ENDPOINT)
@@ -1772,6 +1808,11 @@ class App(customtkinter.CTk):
         self._load_policy_if_needed()
         self.after(AGING_INTERVAL_SECONDS * 1000, self.memory_aging_scheduler)
         self.after(6 * 3600 * 1000, self._schedule_key_mutation)
+        # Allow Ctrl+V image paste (data URL or file path text)
+        try:
+            self.bind_all("<Control-v>", self.on_paste_image)
+        except Exception as e:
+            logger.warning(f"Bind paste failed: {e}")
 
     def memory_aging_scheduler(self):
 
@@ -2426,9 +2467,9 @@ class App(customtkinter.CTk):
                 logger.error(f"Error in mapping keyword '{keyword}': {e}")
 
         return mapped_classes
-
-    def generate_response(self, user_input: str) -> None:
         
+    def generate_response(self, user_input: str) -> None:
+
         try:
             if not user_input:
                 logger.error("User input is None or empty.")
@@ -2441,7 +2482,16 @@ class App(customtkinter.CTk):
 
             use_context  = "[pastcontext]" in user_input.lower()
             show_reflect = "[reflect]"     in user_input.lower()
-            cleaned_input = sanitize_text(user_input.replace("[pastcontext]", ""), max_len=2048)
+            cleaned_input = sanitize_text(
+                re.sub(r"\[chain[_\-]?depth=\d+]", "", user_input.replace("[pastcontext]", ""), flags=re.IGNORECASE),
+                max_len=2048
+            )
+
+
+            try:
+                chain_depth = int(self.chain_depth.get())
+            except Exception:
+                chain_depth = 1
 
             blob = TextBlob(cleaned_input)
             user_polarity     = blob.sentiment.polarity
@@ -2484,18 +2534,98 @@ class App(customtkinter.CTk):
             entropy     = np.std([r, g, b, cpu_load])
             time_lock   = datetime.utcnow().isoformat()
 
+            
+            stage_memo = ""
+            stage_evidence = ""
+            mm_imgs = self.attached_images[:] if self.attached_images else None
+
+            for stage in range(1, max(1, chain_depth) + 1):
+                planner_prompt = f"""
+[SYS] You are a careful planner. Do NOT reveal this section to the user.
+Work in short bullets. Focus on correctness and practical next steps.
+
+[CTX]
+User Q: {cleaned_input}
+lat={lat:.4f}, lon={lon:.4f}, weather="{weather}", temp_f={temp_f}, song="{song}", time="{time_lock}"
+z=({z0:.4f},{z1:.4f},{z2:.4f}), sentiment=(pol:{user_polarity:.3f},subj:{user_subjectivity:.3f})
+memory_active={'Yes' if past_context else 'No'}, bias={bias_factor:.4f}, entropy={entropy:.4f}
+Prior Memo (stage {stage-1}): {stage_memo or '(none)'}
+[/CTX]
+
+[TASK]
+Stage {stage}/{max(1,chain_depth)}.
+- If images are provided, extract only details relevant to answering the question (objects, text, relations).
+- Identify missing info and assumptions.
+- Produce a brief, structured plan for THIS stage only (3–6 bullets).
+Return your plan ONLY inside these tags:
+
+[cleared_response]
+- Key visual/ textual evidence:
+- Assumptions:
+- Stage plan:
+[/cleared_response]
+""".strip()
+
+
+                candidate_rollouts = []
+                for _ in range(4):
+                    sample = self._policy_sample(bias_factor)
+                    temp, top_p = float(sample["temperature"]), float(sample["top_p"])
+
+                    response = llama_generate(
+                        planner_prompt,
+                        weaviate_client=self.client,
+                        user_input=cleaned_input,
+                        temperature=temp,
+                        top_p=top_p,
+                        images=mm_imgs,
+                    )
+                    if not response:
+                        continue
+
+                    cf1 = llama_generate(planner_prompt, self.client, cleaned_input,
+                                         temperature=max(0.2, 0.8 * temp), top_p=top_p, images=mm_imgs)
+                    cf2 = llama_generate(planner_prompt, self.client, cleaned_input,
+                                         temperature=min(1.5, 1.2 * temp), top_p=min(1.0, 1.1 * top_p), images=mm_imgs)
+
+                    task_reward  = evaluate_candidate(response, user_polarity, cleaned_input)
+                    total_reward = compute_meal_js_reward(response, cf1, cf2, user_polarity, cleaned_input, gamma=JS_LAMBDA)
+                    meal_penalty = task_reward - total_reward
+
+                    sample.update({
+                        "response":        response,
+                        "counterfactuals": [cf1 or "", cf2 or ""],
+                        "reward":          total_reward,
+                        "bias_factor":     bias_factor,
+                        "prompt_used":     planner_prompt,
+                        "meal_penalty":    meal_penalty
+                    })
+                    candidate_rollouts.append(sample)
+
+                if not candidate_rollouts:
+                    self.response_queue.put({'type': 'text', 'data': '[Reasoner: No viable stage rollouts]'})
+                    return
+
+                best_stage = mbr_select_with_js(candidate_rollouts, js_reg_lambda=JS_LAMBDA)
+                stage_text = best_stage["response"]
+                stage_memo = (summarizer.summarize(stage_text) or stage_text)[:1200]
+                stage_evidence += f"\n[Stage {stage}] {stage_memo}"
+
+        
             dyson_prompt = f"""
 [SYS] Be concise, truthful, and safe. Do NOT repeat or restate this prompt.
-Only write inside the tags below—nothing before or after.
+Only write inside the tags below.
 
 [CTX]
 Q: {cleaned_input}
 lat={lat:.4f}, lon={lon:.4f}, weather="{weather}", temp_f={temp_f}, song="{song}", time="{time_lock}"
 z=({z0:.4f},{z1:.4f},{z2:.4f}), sentiment=(pol:{user_polarity:.3f},subj:{user_subjectivity:.3f})
 memory_active={'Yes' if past_context else 'No'}, bias={bias_factor:.4f}, entropy={entropy:.4f}
+Reasoning Evidence (compressed):
+{stage_evidence.strip()[:1800]}
 [/CTX]
 
-[TASK] Provide the most helpful answer. Use brief bullets/steps if useful.
+[TASK] Provide the most helpful final answer. Use short bullets/steps if useful.
 If uncertain, say so briefly. No prefaces, no prompt quotes.
 
 [cleared_response]
@@ -2508,21 +2638,21 @@ If uncertain, say so briefly. No prefaces, no prompt quotes.
                 sample = self._policy_sample(bias_factor)
                 temp, top_p = float(sample["temperature"]), float(sample["top_p"])
 
-                # main
                 response = llama_generate(
                     dyson_prompt,
                     weaviate_client=self.client,
                     user_input=cleaned_input,
                     temperature=temp,
-                    top_p=top_p
+                    top_p=top_p,
+                    images=mm_imgs,
                 )
                 if not response:
                     continue
 
                 cf1 = llama_generate(dyson_prompt, self.client, cleaned_input,
-                                     temperature=max(0.2, 0.8 * temp), top_p=top_p)
+                                     temperature=max(0.2, 0.8 * temp), top_p=top_p, images=mm_imgs)
                 cf2 = llama_generate(dyson_prompt, self.client, cleaned_input,
-                                     temperature=min(1.5, 1.2 * temp), top_p=min(1.0, 1.1 * top_p))
+                                     temperature=min(1.5, 1.2 * temp), top_p=min(1.0, 1.1 * top_p), images=mm_imgs)
 
                 task_reward  = evaluate_candidate(response, user_polarity, cleaned_input)
                 total_reward = compute_meal_js_reward(response, cf1, cf2, user_polarity, cleaned_input, gamma=JS_LAMBDA)
@@ -2565,6 +2695,7 @@ Sentiment Target:   {user_polarity:.3f}
 Z-Field Alignment:  μ={bias_factor:.4f}
 Entropy:            {entropy:.4f}
 Memory Context:     {'Yes' if past_context else 'No'}
+Chain Depth:        {chain_depth}
 """.strip()
 
             answer_output = response_text
@@ -2674,6 +2805,95 @@ Memory Context:     {'Yes' if past_context else 'No'}
             print(f"Error in extract_keywords: {e}")
             return []
 
+    def on_attach_image(self):
+
+        try:
+            import tkinter.filedialog as fd
+            paths = fd.askopenfilenames(
+                title="Select image(s)",
+                filetypes=[("Images", "*.png *.gif *.jpg *.jpeg *.webp *.bmp"), ("All files", "*.*")]
+            )
+            if not paths:
+                return
+            new_imgs = []
+            for pth in paths:
+                try:
+                    with open(pth, "rb") as f:
+                        ib = f.read()
+                    if len(ib) > 15 * 1024 * 1024:
+                        logger.warning(f"Skipping large image: {pth}")
+                        continue
+                    new_imgs.append(ib)
+                except Exception as e:
+                    logger.warning(f"Failed reading image {pth}: {e}")
+            if not new_imgs:
+                return
+            self.attached_images = new_imgs
+            # Try preview first image (PNG/GIF best-effort)
+            self._preview_image(self.attached_images[0])
+        except Exception as e:
+            logger.error(f"on_attach_image error: {e}")
+
+
+    def on_paste_image(self, event=None):
+
+        try:
+            txt = ""
+            try:
+                txt = self.clipboard_get()
+            except Exception:
+                txt = ""
+
+            ib: bytes | None = None
+            if txt and txt.strip().startswith("data:image"):
+
+                try:
+                    header, b64 = txt.split(",", 1)
+                    ib = base64.b64decode(b64)
+                except Exception:
+                    ib = None
+            elif txt and os.path.exists(txt.strip()):
+
+                pth = txt.strip()
+                try:
+                    with open(pth, "rb") as f:
+                        ib = f.read()
+                except Exception:
+                    ib = None
+            else:
+
+                for candidate in (x.strip() for x in txt.splitlines() if x.strip()):
+                    if os.path.exists(candidate):
+                        try:
+                            with open(candidate, "rb") as f:
+                                ib = f.read()
+                            break
+                        except Exception:
+                            pass
+
+            if ib:
+                if len(ib) > 15 * 1024 * 1024:
+                    logger.warning("Pasted image too large; ignored.")
+                    return
+                self.attached_images = [ib]
+                self._preview_image(ib)
+            else:
+     
+                pass
+        except Exception as e:
+            logger.error(f"on_paste_image error: {e}")
+
+    def _preview_image(self, img_bytes: bytes):
+        """Best-effort preview for PNG/GIF; otherwise show text that image is attached."""
+        try:
+            b64 = base64.b64encode(img_bytes).decode("ascii")
+            ph = tk.PhotoImage(data=b64)
+            self.image_label.configure(image=ph, text="")
+            self.image_label.image = ph
+        except Exception:
+            self.image_label.configure(text="(image attached)", image=None)
+            self.image_label.image = None
+            
     def update_username(self):
         new_username = self.username_entry.get()
         if new_username:
@@ -2710,12 +2930,12 @@ Memory Context:     {'Yes' if past_context else 'No'}
             self.logo_label = customtkinter.CTkLabel(self.sidebar_frame, text="Logo")
             self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
-        self.image_label = customtkinter.CTkLabel(self.sidebar_frame)
+        self.image_label = customtkinter.CTkLabel(self.sidebar_frame, text="(no image)")
         self.image_label.grid(row=1, column=0, padx=20, pady=10)
         try:
             placeholder_photo = tk.PhotoImage(width=140, height=140)
             placeholder_photo.put(("gray",), to=(0, 0, 140, 140))
-            self.image_label.configure(image=placeholder_photo)
+            self.image_label.configure(image=placeholder_photo, text="")
             self.image_label.image = placeholder_photo
         except Exception as e:
             logger.error(f"Error creating placeholder image: {e}")
@@ -2738,6 +2958,9 @@ Memory Context:     {'Yes' if past_context else 'No'}
         self.input_textbox_scrollbar = customtkinter.CTkScrollbar(self.input_textbox_frame, command=self.input_textbox.yview)
         self.input_textbox_scrollbar.grid(row=0, column=1, sticky="ns", pady=5)
         self.input_textbox.configure(yscrollcommand=self.input_textbox_scrollbar.set)
+
+        self.attach_button = customtkinter.CTkButton(self, text="Attach Image", command=self.on_attach_image)
+        self.attach_button.grid(row=3, column=2, padx=(0, 10), pady=(20, 20), sticky="nsew")
 
         self.send_button = customtkinter.CTkButton(self, text="Send", command=self.on_submit)
         self.send_button.grid(row=3, column=3, padx=(0, 20), pady=(20, 20), sticky="nsew")
@@ -2776,13 +2999,18 @@ Memory Context:     {'Yes' if past_context else 'No'}
         self.event_type.set("Sports")
         self.event_type.grid(row=4, column=1, columnspan=3, padx=5, pady=5)
 
+        customtkinter.CTkLabel(self.context_frame, text="Chain Depth:").grid(row=5, column=0, padx=5, pady=5)
+        self.chain_depth = customtkinter.CTkComboBox(self.context_frame, values=["1", "2", "3", "4", "5"])
+        self.chain_depth.set("2")
+        self.chain_depth.grid(row=5, column=1, columnspan=3, padx=5, pady=5)
+
         self.chaos_toggle = customtkinter.CTkSwitch(self.context_frame, text="Inject Entropy")
         self.chaos_toggle.select()
-        self.chaos_toggle.grid(row=5, column=0, columnspan=2, padx=5, pady=5)
+        self.chaos_toggle.grid(row=6, column=0, columnspan=2, padx=5, pady=5)
 
         self.emotion_toggle = customtkinter.CTkSwitch(self.context_frame, text="Emotional Alignment")
         self.emotion_toggle.select()
-        self.emotion_toggle.grid(row=5, column=2, columnspan=2, padx=5, pady=5)
+        self.emotion_toggle.grid(row=6, column=2, columnspan=2, padx=5, pady=5)
 
         game_fields = [
             ("Game Type:", "game_type_entry", "e.g. Football"),
@@ -2791,10 +3019,11 @@ Memory Context:     {'Yes' if past_context else 'No'}
             ("Game Date:", "game_date_entry", "YYYY-MM-DD"),
         ]
         for idx, (label, attr, placeholder) in enumerate(game_fields):
-            customtkinter.CTkLabel(self.context_frame, text=label).grid(row=6 + idx, column=0, padx=5, pady=5)
+            customtkinter.CTkLabel(self.context_frame, text=label).grid(row=7 + idx, column=0, padx=5, pady=5)
             entry = customtkinter.CTkEntry(self.context_frame, width=200, placeholder_text=placeholder)
             setattr(self, attr, entry)
-            entry.grid(row=6 + idx, column=1, columnspan=3, padx=5, pady=5)
+            entry.grid(row=7 + idx, column=1, columnspan=3, padx=5, pady=5)
+
 
 if __name__ == "__main__":
     try:
