@@ -354,7 +354,6 @@ class SecureKeyManager:
                 with open(HYBRIDG_PRIV_PATH, "wb") as f:
                     f.write(sk)
 
-            ]
                 try:
                     os.chmod(HYBRIDG_PUB_PATH,  0o600)
                     os.chmod(HYBRIDG_PRIV_PATH, 0o600)
