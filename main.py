@@ -480,6 +480,7 @@ class SecureKeyManager:
         self._write_encrypted_vault(vault_body)
 
     def _write_encrypted_vault(self, vault_body: dict):
+
         plaintext = json.dumps(vault_body, indent=2).encode("utf-8")
         salt      = base64.b64decode(vault_body["salt"])
 
@@ -495,8 +496,22 @@ class SecureKeyManager:
             "nonce": base64.b64encode(nonce).decode(),
             "ciphertext": base64.b64encode(ct).decode(),
         }
-        with open(self.vault_path, "w") as f:
+
+        os.makedirs("secure", exist_ok=True)
+        try:
+            os.chmod("secure", 0o700)
+        except Exception:
+            pass
+
+        tmp_path = f"{self.vault_path}.tmp"
+        with open(tmp_path, "w") as f:
             json.dump(on_disk, f, indent=2)
+        os.replace(tmp_path, self.vault_path)
+
+        try:
+            os.chmod(self.vault_path, 0o600)
+        except Exception:
+            pass
 
     def _load_vault(self) -> dict:
         with open(self.vault_path, "r") as f:
