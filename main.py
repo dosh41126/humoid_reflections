@@ -987,6 +987,9 @@ def fetch_live_weather(lat: float, lon: float, fallback_temp_f: float = 70.0) ->
 
 dev7 = qml.device("default.qubit", wires=7, shots=None)
 
+def rgb_quantum_gate(r, g, b, **kwargs):
+    return rgb_expvals(r, g, b, **kwargs)
+    
 def clamp01(x): 
     return float(min(1.0, max(0.0, x)))
 
@@ -1320,8 +1323,6 @@ def reflect_on_memory(self, user_id: str, topic: str) -> str:
         response.append("────────────────────────────")
     return "\n".join(response)
 
-
-# --- Advanced llama-cpp init (drop-in replacement) ---
 llm = Llama(
     model_path=model_path,
     mmproj=mmproj_path,
@@ -1341,9 +1342,7 @@ def compute_meal_js_reward(candidate_text: str,
                            target_sentiment: float,
                            original_query: str,
                            gamma: float = JS_LAMBDA) -> float:
-    """
-    Task reward (sentiment/overlap) minus MEAL-JS penalty (JS between candidate and avg counterfactuals).
-    """
+
     task_reward = evaluate_candidate(candidate_text, target_sentiment, original_query)
 
     cfs = [t for t in (cf1_text, cf2_text) if t]
@@ -1364,12 +1363,6 @@ def compute_meal_js_reward(candidate_text: str,
 
 def mbr_select_with_js(samples: list[dict],
                        js_reg_lambda: float = JS_LAMBDA) -> dict:
-    """
-    Each sample dict must contain:
-      - 'response': str
-      - 'counterfactuals': list[str] of length >= 1 (e.g., [cf1, cf2])
-    Returns the sample with minimal MBR-JS score.
-    """
     best = None
     best_score = float("inf")
 
@@ -1412,7 +1405,6 @@ def is_code_like(text):
     # multiple lines starting with 4+ spaces or tabs
     indented = sum(1 for ln in text.splitlines() if re.match(r'^\s{4,}|\t', ln))
     return indented >= 3
-
 
 def determine_token(chunk, memory, max_words_to_check=500):
    combined_chunk = f"{memory} {chunk}"
@@ -1500,17 +1492,15 @@ def fetch_relevant_info(chunk, client, user_input):
         logger.error(f"[FHEv2 retrieval] failed: {e}")
         return ""
 
-# --- Context-augmented, sentence-aware, cognitively-tagged generator (drop-in replacement) ---
 def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.0, top_p=0.9):
     config = load_config()
     max_tokens = config.get('MAX_TOKENS', 2500)
-    target_len = config.get('CHUNK_SIZE', 358)            # keep your setting for parity
+    target_len = config.get('CHUNK_SIZE', 358)     
     try:
-        # Prepend cognitive tag once (derived from full prompt)
+       
         cog_tag = build_cognitive_tag(prompt)
         prompt = f"{cog_tag}\n{prompt}"
 
-        # Sentence/paragraph aware chunks with overlap
         prompt_chunks = advanced_chunker(prompt, target_len=min(480, max(240, target_len)), overlap=72)
 
         responses = []
@@ -1518,7 +1508,7 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
         memory = ""
 
         for i, current_chunk in enumerate(prompt_chunks):
-            # Retrieve with FHE bucket + optional manifold geodesic hop
+      
             retrieved = fetch_relevant_info(current_chunk, weaviate_client, user_input) if weaviate_client else ""
             try:
                 geodesic_hint = ""
@@ -1560,7 +1550,6 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
         return None
         
         
-        # --- NEW: robust cleared-response extractor ---
 _CLEARED_RE = re.compile(r'\[cleared_response\](.*?)\[/cleared_response\]', re.S | re.I)
 def extract_cleared_response(text: str) -> str:
     if not text:
@@ -1568,13 +1557,10 @@ def extract_cleared_response(text: str) -> str:
     m = _CLEARED_RE.search(text)
     return sanitize_text(m.group(1) if m else text, max_len=4000).strip()
 
-# --- NEW: sentence-aware chunker (respects paragraphs/sentences) ---
 def advanced_chunker(text: str, target_len: int = 420, overlap: int = 64, hard_cap: int = 1200):
     text = text.strip()
     if len(text) <= target_len:
         return [text]
-
-    # Prefer paragraph boundaries, then sentence boundaries, fallback to hard split
     paras = [p for p in re.split(r'\n{2,}', text) if p.strip()]
     chunks = []
     buf = []
@@ -1638,7 +1624,6 @@ def advanced_chunker(text: str, target_len: int = 420, overlap: int = 64, hard_c
     flush_buf()
     return chunks
 
-# --- NEW: lightweight neurosymbolic tag to steer generations ---
 def _evolve_field(psi: np.ndarray, align: np.ndarray, kernel: np.ndarray,
                   dt: float = 1.0, lam: float = 0.008, decay: float = 0.001) -> np.ndarray:
     # Complex field evolution (numerical, fast)
@@ -1652,7 +1637,6 @@ def _binding_energy(phi: np.ndarray, B: np.ndarray) -> float:
     return float(val)
 
 def build_cognitive_tag(prompt: str) -> str:
-    # Deterministic small system to derive a guidance tag from current prompt text
     seed = int(hashlib.sha256(prompt.encode("utf-8")).hexdigest(), 16) % (2**32)
     rng = np.random.default_rng(seed)
     N = 96
@@ -1664,11 +1648,26 @@ def build_cognitive_tag(prompt: str) -> str:
     for _ in range(3):
         psi = _evolve_field(psi, align, kernel)
 
-    # binding with a weak skew-Hermitian part
     B = np.eye(N, dtype=np.complex128) + 1j * np.triu(np.ones((N, N))) * 0.01
     E = _binding_energy(psi, B)
     tag = f"⟨ψ⟩={np.mean(psi).real:.3f}|E={E:.3f}"
     return f"[cog:{tag}]"
+
+import inspect
+
+def _llama_call_safe(llm, **p):
+    # normalize names across versions
+    if "mirostat_mode" in p and "mirostat" not in p:
+        p["mirostat"] = p.pop("mirostat_mode")  # 0/1/2
+    # discover supported params
+    sig = inspect.signature(llm.__call__)
+    allowed = set(sig.parameters.keys())
+    # handle max_tokens vs n_predict
+    if "max_tokens" in p and "max_tokens" not in allowed and "n_predict" in allowed:
+        p["n_predict"] = p.pop("max_tokens")
+    # drop unsupported params (e.g., cache_prompt, presence_penalty on older builds)
+    p = {k: v for k, v in p.items() if k in allowed}
+    return llm(**p)
 
 def tokenize_and_generate(
     chunk,
@@ -1677,40 +1676,45 @@ def tokenize_and_generate(
     chunk_size,
     temperature=1.0,
     top_p=0.9,
-    stop=None,  # NEW
+    stop=None,
 ):
     try:
         if stop is None:
-            stop = ["[/cleared_response]"]  # NEW default
+            stop = ["[/cleared_response]"]
 
-        # Light logit bias to avoid role tokens
         logit_bias = {}
         try:
             for bad in ("system:", "assistant:", "user:"):
                 toks = llm.tokenize(bad.encode("utf-8"), add_bos=False)
-                if toks:
-                    logit_bias[int(toks[0])] = -2.0
+                if toks: logit_bias[int(toks[0])] = -2.0
         except Exception:
-            logit_bias = {}
+            pass
 
-        out = llm(
-            prompt=f"[{token}] {chunk}",
-            max_tokens=min(max_tokens, chunk_size),
-            temperature=float(max(0.2, min(1.5, temperature))),
-            top_p=float(max(0.2, min(1.0, top_p))),
-            repeat_penalty=1.08,
-            repeat_last_n=256,
-            mirostat_mode=2,
-            mirostat_tau=5.0,
-            mirostat_eta=0.1,
-            cache_prompt=True,
-            logit_bias=logit_bias,
-            stop=stop,  # NEW
-        )
-        if not isinstance(out, dict) or "choices" not in out or not out["choices"]:
-            logger.error("Llama returned invalid output")
-            return None
-        return out["choices"][0].get("text", "")
+        params = {
+            "prompt": f"[{token}] {chunk}",
+            "max_tokens": min(max_tokens, chunk_size),
+            "temperature": float(max(0.2, min(1.5, temperature))),
+            "top_p": float(max(0.2, min(1.0, top_p))),
+            "repeat_penalty": 1.08,
+            "mirostat_mode": 2,      # will map to 'mirostat'
+            "mirostat_tau": 5.0,
+            "mirostat_eta": 0.1,
+            "logit_bias": logit_bias,
+            "stop": stop,
+            "top_k": 40,
+            # removed: cache_prompt, presence_penalty, frequency_penalty (may not exist)
+        }
+
+        out = _llama_call_safe(llm, **params)
+
+        # standardize output
+        if isinstance(out, dict) and "choices" in out and out["choices"]:
+            ch = out["choices"][0]
+            if "text" in ch:
+                return ch["text"]
+            if "message" in ch and isinstance(ch["message"], dict):
+                return ch["message"].get("content", "")
+        return ""
     except Exception as e:
         logger.error(f"Error in tokenize_and_generate: {e}")
         return None
@@ -2475,8 +2479,8 @@ class App(customtkinter.CTk):
             rgb      = extract_rgb_from_text(cleaned_input)
             r, g, b  = [c / 255.0 for c in rgb]
             cpu_load = psutil.cpu_percent(interval=0.4) / 100.0
-            z0, z1, z2 = rgb_quantum_gate(r, g, b, cpu_load)
-            self.generate_quantum_state(rgb=rgb)  # updates last_z
+            z0, z1, z2 = rgb_quantum_gate(r, g, b, cpu_usage=cpu_load)
+            self.generate_quantum_state(rgb=rgb)
             self.last_z = (z0, z1, z2)
 
             bias_factor = (z0 + z1 + z2) / 3.0
