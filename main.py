@@ -1656,16 +1656,14 @@ def build_cognitive_tag(prompt: str) -> str:
 import inspect
 
 def _llama_call_safe(llm, **p):
-    # normalize names across versions
+
     if "mirostat_mode" in p and "mirostat" not in p:
         p["mirostat"] = p.pop("mirostat_mode")  # 0/1/2
-    # discover supported params
+
     sig = inspect.signature(llm.__call__)
     allowed = set(sig.parameters.keys())
-    # handle max_tokens vs n_predict
     if "max_tokens" in p and "max_tokens" not in allowed and "n_predict" in allowed:
         p["n_predict"] = p.pop("max_tokens")
-    # drop unsupported params (e.g., cache_prompt, presence_penalty on older builds)
     p = {k: v for k, v in p.items() if k in allowed}
     return llm(**p)
 
@@ -1702,12 +1700,11 @@ def tokenize_and_generate(
             "logit_bias": logit_bias,
             "stop": stop,
             "top_k": 40,
-            # removed: cache_prompt, presence_penalty, frequency_penalty (may not exist)
+          
         }
 
         out = _llama_call_safe(llm, **params)
 
-        # standardize output
         if isinstance(out, dict) and "choices" in out and out["choices"]:
             ch = out["choices"][0]
             if "text" in ch:
