@@ -1674,10 +1674,7 @@ def tokenize_and_generate(
     stop=None,
     images: list[bytes] | None = None,
 ):
-    """
-    Text + (optional) image generation. Tries fast text path first; if images are
-    present, passes them to llama.cpp. Falls back to chat-completion API if needed.
-    """
+
     try:
         if stop is None:
             stop = ["[/cleared_response]"]
@@ -1706,7 +1703,6 @@ def tokenize_and_generate(
             "top_k": 40,
         }
 
-        # Vision path: try passing image bytes directly if supported by __call__
         if images:
             try:
                 params_vis = params.copy()
@@ -1719,7 +1715,6 @@ def tokenize_and_generate(
                     if "message" in ch and isinstance(ch["message"], dict):
                         return ch["message"].get("content", "")
             except TypeError:
-                # Fallback to chat-completion with multimodal content
                 try:
                     msg_content = [{"type": "input_text", "text": base_prompt}]
                     for ib in images:
@@ -1736,7 +1731,6 @@ def tokenize_and_generate(
                 except Exception as e:
                     logger.error(f"MM fallback failed: {e}")
 
-        # Plain text path
         out = _llama_call_safe(llm, **params)
         if isinstance(out, dict) and "choices" in out and out["choices"]:
             ch = out["choices"][0]
@@ -1748,9 +1742,7 @@ def tokenize_and_generate(
     except Exception as e:
         logger.error(f"Error in tokenize_and_generate: {e}")
         return None
-
-
-
+        
 def extract_verbs_and_nouns(text):
     try:
         if not isinstance(text, str):
@@ -1796,7 +1788,7 @@ class App(customtkinter.CTk):
         super().__init__()
         self.user_id = user_identifier
         self.bot_id = "bot"
-        self.attached_images: list[bytes] = []  # NEW: holds raw image bytes for MM
+        self.attached_images: list[bytes] = []
         self.setup_gui()
         self.response_queue = queue.Queue()
         self.client = weaviate.Client(url=WEAVIATE_ENDPOINT)
@@ -1807,7 +1799,6 @@ class App(customtkinter.CTk):
         self._load_policy_if_needed()
         self.after(AGING_INTERVAL_SECONDS * 1000, self.memory_aging_scheduler)
         self.after(6 * 3600 * 1000, self._schedule_key_mutation)
-        # Allow Ctrl+V image paste (data URL or file path text)
         try:
             self.bind_all("<Control-v>", self.on_paste_image)
         except Exception as e:
