@@ -1644,52 +1644,51 @@ def build_cognitive_tag(prompt: str) -> str:
     tag = f"⟨ψ⟩={np.mean(psi).real:.3f}|E={E:.3f}"
     return f"[cog:{tag}]"
 
+def tokenize_and_generate(
+    chunk,
+    token,
+    max_tokens,
+    chunk_size,
+    temperature=1.0,
+    top_p=0.9,
+    stop=None,  # NEW
+):
+    try:
+        if stop is None:
+            stop = ["[/cleared_response]"]  # NEW default
 
-    def tokenize_and_generate(
-        self,                  
-        chunk,
-        token,
-        max_tokens,
-        chunk_size,
-        temperature=1.0,
-        top_p=0.9,
-        stop=None,   
-    ):
+        # Light logit bias to avoid role tokens
+        logit_bias = {}
         try:
-            if stop is None:
-                stop = ["[/cleared_response]"] 
-
-            # Light logit bias to avoid role tokens
+            for bad in ("system:", "assistant:", "user:"):
+                toks = llm.tokenize(bad.encode("utf-8"), add_bos=False)
+                if toks:
+                    logit_bias[int(toks[0])] = -2.0
+        except Exception:
             logit_bias = {}
-            try:
-                for bad in ("system:", "assistant:", "user:"):
-                    toks = llm.tokenize(bad.encode("utf-8"), add_bos=False)
-                    if toks:
-                        logit_bias[int(toks[0])] = -2.0
-            except Exception:
-                logit_bias = {}
 
-            out = llm(
-                prompt=f"[{token}] {chunk}",
-                max_tokens=min(max_tokens, chunk_size),
-                temperature=float(max(0.2, min(1.5, temperature))),
-                top_p=float(max(0.2, min(1.0, top_p))),
-                repeat_penalty=1.08,
-                repeat_last_n=256,
-                mirostat_mode=2,
-                mirostat_tau=5.0,
-                mirostat_eta=0.1,
-                cache_prompt=True,
-                logit_bias=logit_bias,
-                stop=stop,          # NEW
-            )
-            if not isinstance(out, dict) or "choices" not in out or not out["choices"]:
-                logger.error("Llama returned invalid output")
-                return None
-            return out["choices"][0].get("text", "")
-        except Exception as e:
-            logger.error(f"Error in tokenize_and_generate: {e}")
+        out = llm(
+            prompt=f"[{token}] {chunk}",
+            max_tokens=min(max_tokens, chunk_size),
+            temperature=float(max(0.2, min(1.5, temperature))),
+            top_p=float(max(0.2, min(1.0, top_p))),
+            repeat_penalty=1.08,
+            repeat_last_n=256,
+            mirostat_mode=2,
+            mirostat_tau=5.0,
+            mirostat_eta=0.1,
+            cache_prompt=True,
+            logit_bias=logit_bias,
+            stop=stop,  # NEW
+        )
+        if not isinstance(out, dict) or "choices" not in out or not out["choices"]:
+            logger.error("Llama returned invalid output")
             return None
+        return out["choices"][0].get("text", "")
+    except Exception as e:
+        logger.error(f"Error in tokenize_and_generate: {e}")
+        return None
+
 
 def extract_verbs_and_nouns(text):
     try:
