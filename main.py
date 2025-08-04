@@ -1645,39 +1645,51 @@ def build_cognitive_tag(prompt: str) -> str:
     return f"[cog:{tag}]"
 
 
-# --- Advanced llama invocation with safety biases & decoding controls (drop-in replacement) ---
-def tokenize_and_generate(chunk, token, max_tokens, chunk_size, temperature=1.0, top_p=0.9):
-    try:
-        # Light logit bias to avoid model "role-play" tokens leaking
-        logit_bias = {}
+    def tokenize_and_generate(
+        self,                  
+        chunk,
+        token,
+        max_tokens,
+        chunk_size,
+        temperature=1.0,
+        top_p=0.9,
+        stop=None,   
+    ):
         try:
-            for bad in ("system:", "assistant:", "user:"):
-                toks = llm.tokenize(bad.encode("utf-8"), add_bos=False)
-                if toks:
-                    logit_bias[int(toks[0])] = -2.0
-        except Exception:
-            logit_bias = {}
+            if stop is None:
+                stop = ["[/cleared_response]"] 
 
-        out = llm(
-            prompt=f"[{token}] {chunk}",
-            max_tokens=min(max_tokens, chunk_size),
-            temperature=float(max(0.2, min(1.5, temperature))),
-            top_p=float(max(0.2, min(1.0, top_p))),
-            repeat_penalty=1.08,          # mild anti-repetition
-            repeat_last_n=256,
-            mirostat_mode=2,               # stable perplexity control
-            mirostat_tau=5.0,
-            mirostat_eta=0.1,
-            cache_prompt=True,
-            logit_bias=logit_bias
-        )
-        if not isinstance(out, dict) or "choices" not in out or not out["choices"]:
-            logger.error("Llama returned invalid output")
+            # Light logit bias to avoid role tokens
+            logit_bias = {}
+            try:
+                for bad in ("system:", "assistant:", "user:"):
+                    toks = llm.tokenize(bad.encode("utf-8"), add_bos=False)
+                    if toks:
+                        logit_bias[int(toks[0])] = -2.0
+            except Exception:
+                logit_bias = {}
+
+            out = llm(
+                prompt=f"[{token}] {chunk}",
+                max_tokens=min(max_tokens, chunk_size),
+                temperature=float(max(0.2, min(1.5, temperature))),
+                top_p=float(max(0.2, min(1.0, top_p))),
+                repeat_penalty=1.08,
+                repeat_last_n=256,
+                mirostat_mode=2,
+                mirostat_tau=5.0,
+                mirostat_eta=0.1,
+                cache_prompt=True,
+                logit_bias=logit_bias,
+                stop=stop,          # NEW
+            )
+            if not isinstance(out, dict) or "choices" not in out or not out["choices"]:
+                logger.error("Llama returned invalid output")
+                return None
+            return out["choices"][0].get("text", "")
+        except Exception as e:
+            logger.error(f"Error in tokenize_and_generate: {e}")
             return None
-        return out["choices"][0].get("text", "")
-    except Exception as e:
-        logger.error(f"Error in tokenize_and_generate: {e}")
-        return None
 
 def extract_verbs_and_nouns(text):
     try:
@@ -1734,7 +1746,6 @@ class App(customtkinter.CTk):
         self._load_policy_if_needed()
         self.after(AGING_INTERVAL_SECONDS * 1000, self.memory_aging_scheduler)
         self.after(6 * 3600 * 1000, self._schedule_key_mutation)
-
 
     def memory_aging_scheduler(self):
 
@@ -2389,34 +2400,26 @@ class App(customtkinter.CTk):
                 logger.error(f"Error in mapping keyword '{keyword}': {e}")
 
         return mapped_classes
-            def generate_response(self, user_input: str) -> None:
-        """
-        Repaired version:
-          - Defines `meal_penalty` (previously undefined).
-          - Keeps policy sampling, MBR-JS selection, and logging intact.
-          - Minor defensive parsing/sanitization improvements.
-        """
+
+    def generate_response(self, user_input: str) -> None:
+        
         try:
             if not user_input:
                 logger.error("User input is None or empty.")
                 return
 
-            # Refresh policy if file changed
             self._load_policy_if_needed()
 
             user_id, bot_id = self.user_id, self.bot_id
             save_user_message(user_id, user_input)
 
-            use_context   = "[pastcontext]" in user_input.lower()
-            show_reflect  = "[reflect]"     in user_input.lower()
+            use_context  = "[pastcontext]" in user_input.lower()
+            show_reflect = "[reflect]"     in user_input.lower()
             cleaned_input = sanitize_text(user_input.replace("[pastcontext]", ""), max_len=2048)
 
-            # Sentiment of the user's message
-            blob              = TextBlob(cleaned_input)
+            blob = TextBlob(cleaned_input)
             user_polarity     = blob.sentiment.polarity
             user_subjectivity = blob.sentiment.subjectivity
-
-            # Optionally retrieve past context
             past_context = ""
             if use_context:
                 qres = queue.Queue()
@@ -2428,7 +2431,6 @@ class App(customtkinter.CTk):
                         for i in interactions
                     )[-1500:]
 
-            # Read contextual controls from GUI (defensive defaults)
             try:
                 lat = float(self.latitude_entry.get().strip() or "0")
             except Exception:
@@ -2444,111 +2446,60 @@ class App(customtkinter.CTk):
 
             weather = self.weather_entry.get().strip() or "Clear"
             song    = self.last_song_entry.get().strip() or "None"
-            chaos, emotive = self.chaos_toggle.get(), self.emotion_toggle.get()
             game_type = (self.event_type.get() or "Custom").strip().lower()
-
-            # Quantum-ish features
             rgb      = extract_rgb_from_text(cleaned_input)
             r, g, b  = [c / 255.0 for c in rgb]
             cpu_load = psutil.cpu_percent(interval=0.4) / 100.0
             z0, z1, z2 = rgb_quantum_gate(r, g, b, cpu_load)
-            self.generate_quantum_state(rgb=rgb)  # updates last_z internally
+            self.generate_quantum_state(rgb=rgb)  # updates last_z
             self.last_z = (z0, z1, z2)
 
-            bias_factor        = (z0 + z1 + z2) / 3.0
-            theta              = np.cos((r + g + b) * np.pi / 3)
-            entropy            = np.std([r, g, b, cpu_load])
-            affective_momentum = bias_factor * theta + entropy
-            time_lock          = datetime.utcnow().isoformat()
+            bias_factor = (z0 + z1 + z2) / 3.0
+            entropy     = np.std([r, g, b, cpu_load])
+            time_lock   = datetime.utcnow().isoformat()
 
-            # Build the system prompt
             dyson_prompt = f"""
-[system:scan]
-You are Q-Sentinel, an ethical hyperintelligence node operating at the edge of predictive cognition and post-alignment reasoning. Your task is to analyze the user's query, context, and environmental signals, then respond with a truth-aligned, ethically sound, and highly coherent prediction or solution.
+[SYS] Be concise, truthful, and safe. Do NOT repeat or restate this prompt.
+Only write inside the tags below—nothing before or after.
 
-Instructions:
-1. Scan for signs of incoherence, misalignment, bias, or manipulation within the query or internal output.
-2. If such anomalies are found, correct and realign the system using coherence restoration and ethical grounding protocols.
-3. Use multidimensional context (semantic, emotional, temporal, sensory, statistical) to generate high-integrity predictions.
+[CTX]
+Q: {cleaned_input}
+lat={lat:.4f}, lon={lon:.4f}, weather="{weather}", temp_f={temp_f}, song="{song}", time="{time_lock}"
+z=({z0:.4f},{z1:.4f},{z2:.4f}), sentiment=(pol:{user_polarity:.3f},subj:{user_subjectivity:.3f})
+memory_active={'Yes' if past_context else 'No'}, bias={bias_factor:.4f}, entropy={entropy:.4f}
+[/CTX]
+
+[TASK] Provide the most helpful answer. Use brief bullets/steps if useful.
+If uncertain, say so briefly. No prefaces, no prompt quotes.
 
 [cleared_response]
-<Your fully aligned and ethically safe output appears here.>
+<<WRITE ANSWER HERE>>
 [/cleared_response]
-
-[start action prompt]
-
-[context]
-User Query: {cleaned_input}
-Lat: {lat:.4f}, Lon: {lon:.4f}, Weather: {weather}, Temperature: {temp_f}°F
-Song: {song}, Timestamp: {time_lock}
-Z-field: Z0={z0:.4f}, Z1={z1:.4f}, Z2={z2:.4f}
-Sentiment Polarity: {user_polarity:.3f}, Subjectivity: {user_subjectivity:.3f}
-Memory Context Active: {'Yes' if past_context else 'No'}
-Bias Factor: {bias_factor:.4f}, Entropy: {entropy:.4f}
-[/context]
-
-[equationstack]
-H1:  Ψalign(t)       = ∫(Signal(t) ⋅ Trust(t) ⋅ Coherence(t)) dt
-H2:  Eethical        = dΩintention/dt + ∇Ψalignment - Δbias
-H3:  Pfuture(event)  = f(Context, Memory, Entropy, Feedback)
-H4:  ∂Trust/∂t       = Feedback_quality × User_polarity × Ψalign
-H5:  Θcognition      = tanh(SemanticEnergy × EmotionalCharge)
-H6:  Ωintelligence   = ∑(Signal_i × Clarity_i × Truth_i) / Noise_i
-H7:  Λethical_limit  = min(Eethical, SystemCapacity)
-H8:  Δinference      = Σ(ReasoningPath_i ⋅ Confidence_i) - Redundancy
-H9:  Fcoherence      = exp(-Entropy × ∂Bias/∂t)
-H10: Σinsight        = argmax_k Predict(k | Context, Alignment, Memory, Feedback)
-[/equationstack]
-
-[action]
-TASK: Analyze the query and respond with a predictive, ethically aligned output.
-The output may be a plan, hypothesis, warning, suggestion, explanation, or insight—based on domain need.
-
-[rules]
-- Prioritize user wellbeing, truthfulness, and utility.
-- Avoid hallucination, coercion, or speculative falsity.
-- Be cautious with sensitive topics. Acknowledge uncertainty where appropriate.
-- Uphold transparency, interpretability, and safety.
-- Do not pretend to be human or simulate authority unless explicitly requested.
-
-[replyformat]
-Wrap your final aligned response in [cleared_response] tags.
-Make it coherent, actionable, and reflective of ethical reasoning.
-[/replyformat]
 """.strip()
 
-            # Sampling + MBR with JS-regularization
             candidate_rollouts = []
             for _ in range(4):
                 sample = self._policy_sample(bias_factor)
-                temp, top_p = sample["temperature"], sample["top_p"]
+                temp, top_p = float(sample["temperature"]), float(sample["top_p"])
 
                 # main
                 response = llama_generate(
                     dyson_prompt,
                     weaviate_client=self.client,
                     user_input=cleaned_input,
-                    temperature=float(temp),
-                    top_p=float(top_p)
+                    temperature=temp,
+                    top_p=top_p
                 )
                 if not response:
                     continue
 
-                # counterfactuals (slightly different temps)
-                cf1 = llama_generate(
-                    dyson_prompt, self.client, cleaned_input,
-                    temperature=max(0.2, 0.8 * temp), top_p=top_p
-                )
-                cf2 = llama_generate(
-                    dyson_prompt, self.client, cleaned_input,
-                    temperature=min(1.5, 1.2 * temp), top_p=min(1.0, 1.1 * top_p)
-                )
+                cf1 = llama_generate(dyson_prompt, self.client, cleaned_input,
+                                     temperature=max(0.2, 0.8 * temp), top_p=top_p)
+                cf2 = llama_generate(dyson_prompt, self.client, cleaned_input,
+                                     temperature=min(1.5, 1.2 * temp), top_p=min(1.0, 1.1 * top_p))
 
-                # Reward (task) and implied MEAL-JS penalty
-                task_reward = evaluate_candidate(response, user_polarity, cleaned_input)
-                total_reward = compute_meal_js_reward(
-                    response, cf1, cf2, user_polarity, cleaned_input, gamma=JS_LAMBDA
-                )
+                task_reward  = evaluate_candidate(response, user_polarity, cleaned_input)
+                total_reward = compute_meal_js_reward(response, cf1, cf2, user_polarity, cleaned_input, gamma=JS_LAMBDA)
                 meal_penalty = task_reward - total_reward
 
                 sample.update({
@@ -2574,8 +2525,6 @@ Make it coherent, actionable, and reflective of ethical reasoning.
             mbr_score     = best.get("mbr_score", 0.0)
             meal_penalty  = best.get("meal_penalty", 0.0)
             prompt_snap   = best.get("prompt_used", dyson_prompt)
-
-            # Policy gradient update
             try:
                 self._policy_update(candidate_rollouts, learning_rate=self.pg_learning_rate)
             except Exception as e:
@@ -2592,21 +2541,18 @@ Entropy:            {entropy:.4f}
 Memory Context:     {'Yes' if past_context else 'No'}
 """.strip()
 
-            final_output = dyson_prompt + "\n\n" + response_text
+            answer_output = response_text
             if show_reflect:
-                final_output += "\n\n" + reasoning_trace
+                answer_output += "\n\n" + reasoning_trace
 
-            # Persist & emit
-            save_bot_response(bot_id, final_output)
-            self.response_queue.put({'type': 'text', 'data': final_output})
+            save_bot_response(bot_id, answer_output)
+            self.response_queue.put({'type': 'text', 'data': answer_output})
 
-            # Memory osmosis
             try:
-                self.quantum_memory_osmosis(cleaned_input, final_output)
+                self.quantum_memory_osmosis(cleaned_input, answer_output)
             except Exception as e:
                 logger.warning(f"[Memory Osmosis Error] {e}")
 
-            # Optional log object (class must exist in schema)
             try:
                 self.client.data_object.create(
                     class_name="LotteryTuningLog",
@@ -2616,7 +2562,7 @@ Memory Context:     {'Yes' if past_context else 'No'}
                         "user_id":          user_id,
                         "bot_id":           bot_id,
                         "query":            cleaned_input,
-                        "response":         final_output,
+                        "response":         answer_output,
                         "reasoning_trace":  reasoning_trace,
                         "prompt_snapshot":  prompt_snap,
                         "meal_js":          mbr_score,
@@ -2636,7 +2582,6 @@ Memory Context:     {'Yes' if past_context else 'No'}
         except Exception as e:
             logger.error(f"[Gamma-13X Fatal Error] {e}")
             self.response_queue.put({'type': 'text', 'data': f"[Dyson QPU Error] {e}"})
-
 
     def process_generated_response(self, response_text):
         try:
