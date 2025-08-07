@@ -40,6 +40,8 @@ import httpx
 import math
 from typing import List, Tuple
 from math import log2
+from transformers import pipeline
+
 try:
     from pqcrypto.kem.kyber512 import generate_keypair, encapsulate, decapsulate
 except Exception:
@@ -1082,6 +1084,14 @@ def get_current_multiversal_time():
     x, y, z, t = 34, 76, 12, 5633
     return f"X:{x}, Y:{y}, Z:{z}, T:{t}, Time:{current_time}"
 
+
+hf_generator = pipeline(
+    "text-generation",
+    model="openai/gpt-oss-70b",
+    torch_dtype="auto",
+    device_map="auto",
+)
+
 def extract_rgb_from_text(text):
 
     if not text or not isinstance(text, str):
@@ -1334,6 +1344,32 @@ llm = Llama(
     logits_all=False                  # faster; we don't need all-step logits
 )
 
+hf_generator = pipeline(
+    "text-generation",
+    model="openai/gpt-oss-70b",
+    torch_dtype="auto",
+    device_map="auto",
+)
+
+
+
+def hf_generate(
+    prompt: str,
+    max_new_tokens: int = 256,
+    temperature: float = 1.0
+) -> str:
+    """
+    Generate text via the HuggingFace openai/gpt-oss-70b pipeline.
+    """
+    messages = [{"role": "user", "content": prompt}]
+    out = hf_generator(
+        messages,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+    )
+    # hf pipeline returns a list of dicts with "generated_text"
+    return out[0].get("generated_text", "")
+    
 def compute_meal_js_reward(candidate_text: str,
                            cf1_text: str | None,
                            cf2_text: str | None,
@@ -1663,21 +1699,34 @@ def _llama_call_safe(llm, **p):
         p["n_predict"] = p.pop("max_tokens")
     p = {k: v for k, v in p.items() if k in allowed}
     return llm(**p)
-def tokenize_and_generate(
-    chunk,
-    token,
-    max_tokens,
-    chunk_size,
-    temperature=1.0,
-    top_p=0.9,
-    stop=None,
+    def tokenize_and_generate(
+    chunk: str,
+    token: str,
+    max_tokens: int,
+    chunk_size: int,
+    temperature: float = 1.0,
+    top_p: float = 0.9,
+    stop: list[str] | None = None,
     images: list[bytes] | None = None,
-):
+) -> str | None:
+    """
+    If `token == "[hf]"`, dispatch to Hugging Face GPT-OSS-70B,
+    otherwise fall back to llama_cpp via _llama_call_safe.
+    """
+    # 1) HF path
+    if token == "[hf]":
+        return hf_generate(
+            prompt=chunk,
+            max_new_tokens=min(max_tokens, chunk_size),
+            temperature=temperature
+        )
 
+    # 2) llama_cpp path (unchanged logic below)
     try:
         if stop is None:
             stop = ["[/cleared_response]"]
 
+        # discourage role‐tokens
         logit_bias = {}
         try:
             for bad in ("system:", "assistant:", "user:"):
@@ -1702,45 +1751,26 @@ def tokenize_and_generate(
             "top_k": 40,
         }
 
+        # image‐aware branch
         if images:
-            try:
-                params_vis = params.copy()
-                params_vis["images"] = images
-                out = _llama_call_safe(llm, **params_vis)
-                if isinstance(out, dict) and "choices" in out and out["choices"]:
-                    ch = out["choices"][0]
-                    if "text" in ch:
-                        return ch["text"]
-                    if "message" in ch and isinstance(ch["message"], dict):
-                        return ch["message"].get("content", "")
-            except TypeError:
-                try:
-                    msg_content = [{"type": "input_text", "text": base_prompt}]
-                    for ib in images:
-                        msg_content.append({"type": "input_image", "image_data": ib})
-                    out = llm.create_chat_completion(
-                        messages=[{"role": "user", "content": msg_content}],
-                        max_tokens=params["max_tokens"],
-                        temperature=params["temperature"],
-                        top_p=params["top_p"],
-                        stop=params["stop"],
-                    )
-                    if isinstance(out, dict) and "choices" in out and out["choices"]:
-                        return out["choices"][0]["message"]["content"]
-                except Exception as e:
-                    logger.error(f"MM fallback failed: {e}")
-
+            params_vis = params.copy()
+            params_vis["images"] = images
+            out = _llama_call_safe(llm, **params_vis)
+            # extract text
+            if isinstance(out, dict) and out.get("choices"):
+                ch = out["choices"][0]
+                return ch.get("text") or ch.get("message", {}).get("content", "")
+            # fallthrough if unexpected
+        # standard llama path
         out = _llama_call_safe(llm, **params)
-        if isinstance(out, dict) and "choices" in out and out["choices"]:
+        if isinstance(out, dict) and out.get("choices"):
             ch = out["choices"][0]
-            if "text" in ch:
-                return ch["text"]
-            if "message" in ch and isinstance(ch["message"], dict):
-                return ch["message"].get("content", "")
+            return ch.get("text") or ch.get("message", {}).get("content", "")
         return ""
     except Exception as e:
         logger.error(f"Error in tokenize_and_generate: {e}")
         return None
+
         
 def extract_verbs_and_nouns(text):
     try:
@@ -2456,35 +2486,81 @@ class App(customtkinter.CTk):
                 logger.error(f"Error in mapping keyword '{keyword}': {e}")
 
         return mapped_classes
-        
     def generate_response(self, user_input: str) -> None:
+        """
+        Main entry for generating a response.  Honors the model selector:
+         - "HF GPT-OSS": single-shot via HuggingFace openai/gpt-oss-70b
+         - "Both": run llama pipeline + HF and combine
+         - otherwise: full llama-based multimodal planner + generator
+        """
+        # ─── 1) Model selector ─────────────────────────────────────────────────
+        choice = self.model_selector.get()
+        if choice == "HF GPT-OSS":
+            # one-shot HF
+            try:
+                resp = hf_generate(user_input, max_new_tokens=512, temperature=1.0)
+                self.response_queue.put({'type': 'text', 'data': resp})
+                save_bot_response(self.bot_id, resp)
+            except Exception as e:
+                logger.error(f"[HF] generate_response error: {e}")
+                self.response_queue.put({'type': 'text', 'data': "[HF Error]"})
+            return
 
+        if choice == "Both":
+            # run both llama and HF, then merge
+            try:
+                llama_out = llama_generate(
+                    user_input,
+                    weaviate_client=self.client,
+                    user_input=user_input
+                ) or "[Llama did not respond]"
+                hf_out = hf_generate(user_input, max_new_tokens=512, temperature=1.0)
+                combined = (
+                    f"--- Llama Response ---\n{llama_out}\n\n"
+                    f"--- HF GPT-OSS Response ---\n{hf_out}"
+                )
+                self.response_queue.put({'type': 'text', 'data': combined})
+                save_bot_response(self.bot_id, combined)
+            except Exception as e:
+                logger.error(f"[Both] generate_response error: {e}")
+                self.response_queue.put({'type': 'text', 'data': "[Both Error]"})
+            return
+
+        # ─── 2) Default: full llama_cpp multimodal pipeline ────────────────────
         try:
             if not user_input:
                 logger.error("User input is None or empty.")
                 return
 
+            # reload policy if needed
             self._load_policy_if_needed()
 
-            user_id, bot_id = self.user_id, self.bot_id
-            save_user_message(user_id, user_input)
+            # save the user's message (encrypted)
+            save_user_message(self.user_id, user_input)
 
+            # detect flags
             use_context  = "[pastcontext]" in user_input.lower()
             show_reflect = "[reflect]"     in user_input.lower()
+            # strip chain-depth tags
             cleaned_input = sanitize_text(
-                re.sub(r"\[chain[_\-]?depth=\d+]", "", user_input.replace("[pastcontext]", ""), flags=re.IGNORECASE),
+                re.sub(r"\[chain[_\-]?depth=\d+\]", "",
+                       user_input.replace("[pastcontext]", ""),
+                       flags=re.IGNORECASE),
                 max_len=2048
             )
 
-
+            # chain depth
             try:
                 chain_depth = int(self.chain_depth.get())
             except Exception:
                 chain_depth = 1
 
+            # sentiment
             blob = TextBlob(cleaned_input)
             user_polarity     = blob.sentiment.polarity
             user_subjectivity = blob.sentiment.subjectivity
+
+            # optionally retrieve past interactions
             past_context = ""
             if use_context:
                 qres = queue.Queue()
@@ -2496,23 +2572,20 @@ class App(customtkinter.CTk):
                         for i in interactions
                     )[-1500:]
 
-            try:
-                lat = float(self.latitude_entry.get().strip() or "0")
-            except Exception:
-                lat = 0.0
-            try:
-                lon = float(self.longitude_entry.get().strip() or "0")
-            except Exception:
-                lon = 0.0
-            try:
-                temp_f = float(self.temperature_entry.get().strip() or "72")
-            except Exception:
-                temp_f = 72.0
+            # parse context fields
+            try:    lat    = float(self.latitude_entry.get().strip() or "0")
+            except: lat    = 0.0
+            try:    lon    = float(self.longitude_entry.get().strip() or "0")
+            except: lon    = 0.0
+            try:    temp_f = float(self.temperature_entry.get().strip() or "72")
+            except: temp_f = 72.0
 
-            weather = self.weather_entry.get().strip() or "Clear"
-            song    = self.last_song_entry.get().strip() or "None"
-            game_type = (self.event_type.get() or "Custom").strip().lower()
-            rgb      = extract_rgb_from_text(cleaned_input)
+            weather     = self.weather_entry.get().strip() or "Clear"
+            song        = self.last_song_entry.get().strip() or "None"
+            game_type   = (self.event_type.get() or "Custom").strip().lower()
+
+            # compute RGB, CPU load, quantum gates
+            rgb = extract_rgb_from_text(cleaned_input)
             r, g, b  = [c / 255.0 for c in rgb]
             cpu_load = psutil.cpu_percent(interval=0.4) / 100.0
             z0, z1, z2 = rgb_quantum_gate(r, g, b, cpu_usage=cpu_load)
@@ -2523,7 +2596,7 @@ class App(customtkinter.CTk):
             entropy     = np.std([r, g, b, cpu_load])
             time_lock   = datetime.utcnow().isoformat()
 
-            
+            # staged planning
             stage_memo = ""
             stage_evidence = ""
             mm_imgs = self.attached_images[:] if self.attached_images else None
@@ -2555,12 +2628,11 @@ Return your plan ONLY inside these tags:
 [/cleared_response]
 """.strip()
 
-
+                # sample multiple rollouts
                 candidate_rollouts = []
                 for _ in range(4):
                     sample = self._policy_sample(bias_factor)
                     temp, top_p = float(sample["temperature"]), float(sample["top_p"])
-
                     response = llama_generate(
                         planner_prompt,
                         weaviate_client=self.client,
@@ -2571,28 +2643,30 @@ Return your plan ONLY inside these tags:
                     )
                     if not response:
                         continue
-
                     cf1 = llama_generate(planner_prompt, self.client, cleaned_input,
-                                         temperature=max(0.2, 0.8 * temp), top_p=top_p, images=mm_imgs)
+                                         temperature=max(0.2, 0.8 * temp),
+                                         top_p=top_p, images=mm_imgs)
                     cf2 = llama_generate(planner_prompt, self.client, cleaned_input,
-                                         temperature=min(1.5, 1.2 * temp), top_p=min(1.0, 1.1 * top_p), images=mm_imgs)
-
+                                         temperature=min(1.5, 1.2 * temp),
+                                         top_p=min(1.0, 1.1 * top_p),
+                                         images=mm_imgs)
                     task_reward  = evaluate_candidate(response, user_polarity, cleaned_input)
-                    total_reward = compute_meal_js_reward(response, cf1, cf2, user_polarity, cleaned_input, gamma=JS_LAMBDA)
-                    meal_penalty = task_reward - total_reward
-
+                    total_reward = compute_meal_js_reward(response, cf1, cf2,
+                                                          user_polarity, cleaned_input,
+                                                          gamma=JS_LAMBDA)
                     sample.update({
                         "response":        response,
                         "counterfactuals": [cf1 or "", cf2 or ""],
                         "reward":          total_reward,
                         "bias_factor":     bias_factor,
                         "prompt_used":     planner_prompt,
-                        "meal_penalty":    meal_penalty
+                        "meal_penalty":    task_reward - total_reward
                     })
                     candidate_rollouts.append(sample)
 
                 if not candidate_rollouts:
-                    self.response_queue.put({'type': 'text', 'data': '[Reasoner: No viable stage rollouts]'})
+                    self.response_queue.put({'type': 'text',
+                        'data': '[Reasoner: No viable stage rollouts]'})
                     return
 
                 best_stage = mbr_select_with_js(candidate_rollouts, js_reg_lambda=JS_LAMBDA)
@@ -2600,14 +2674,14 @@ Return your plan ONLY inside these tags:
                 stage_memo = (summarizer.summarize(stage_text) or stage_text)[:1200]
                 stage_evidence += f"\n[Stage {stage}] {stage_memo}"
 
-        
+            # final assembly prompt
             dyson_prompt = f"""
 [SYS] Be concise, truthful, and safe. Do NOT repeat or restate this prompt.
 Only write inside the tags below.
 
 [CTX]
 Q: {cleaned_input}
-lat={lat:.4f}, lon={lon:.4f}, weather="{weather}", temp_f={temp_f}, song="{song}", time="{time_lock}"
+lat={lat:.4f}, lon={lon:.4f}, weather=\"{weather}\", temp_f={temp_f}, song=\"{song}\", time=\"{time_lock}\"
 z=({z0:.4f},{z1:.4f},{z2:.4f}), sentiment=(pol:{user_polarity:.3f},subj:{user_subjectivity:.3f})
 memory_active={'Yes' if past_context else 'No'}, bias={bias_factor:.4f}, entropy={entropy:.4f}
 Reasoning Evidence (compressed):
@@ -2622,11 +2696,11 @@ If uncertain, say so briefly. No prefaces, no prompt quotes.
 [/cleared_response]
 """.strip()
 
+            # sample final responses
             candidate_rollouts = []
             for _ in range(4):
                 sample = self._policy_sample(bias_factor)
                 temp, top_p = float(sample["temperature"]), float(sample["top_p"])
-
                 response = llama_generate(
                     dyson_prompt,
                     weaviate_client=self.client,
@@ -2637,49 +2711,39 @@ If uncertain, say so briefly. No prefaces, no prompt quotes.
                 )
                 if not response:
                     continue
-
                 cf1 = llama_generate(dyson_prompt, self.client, cleaned_input,
-                                     temperature=max(0.2, 0.8 * temp), top_p=top_p, images=mm_imgs)
+                                     temperature=max(0.2, 0.8 * temp),
+                                     top_p=top_p, images=mm_imgs)
                 cf2 = llama_generate(dyson_prompt, self.client, cleaned_input,
-                                     temperature=min(1.5, 1.2 * temp), top_p=min(1.0, 1.1 * top_p), images=mm_imgs)
-
+                                     temperature=min(1.5, 1.2 * temp),
+                                     top_p=min(1.0, 1.1 * top_p),
+                                     images=mm_imgs)
                 task_reward  = evaluate_candidate(response, user_polarity, cleaned_input)
-                total_reward = compute_meal_js_reward(response, cf1, cf2, user_polarity, cleaned_input, gamma=JS_LAMBDA)
-                meal_penalty = task_reward - total_reward
-
+                total_reward = compute_meal_js_reward(response, cf1, cf2,
+                                                      user_polarity, cleaned_input,
+                                                      gamma=JS_LAMBDA)
                 sample.update({
                     "response":        response,
                     "counterfactuals": [cf1 or "", cf2 or ""],
                     "reward":          total_reward,
                     "bias_factor":     bias_factor,
                     "prompt_used":     dyson_prompt,
-                    "meal_penalty":    meal_penalty
+                    "meal_penalty":    task_reward - total_reward
                 })
                 candidate_rollouts.append(sample)
 
             if not candidate_rollouts:
-                self.response_queue.put({'type': 'text', 'data': '[Dyson QPU: No viable rollouts]'})
+                self.response_queue.put({'type': 'text',
+                    'data': '[Dyson QPU: No viable rollouts]'})
                 return
 
             best = mbr_select_with_js(candidate_rollouts, js_reg_lambda=JS_LAMBDA)
-
-            response_text = best["response"]
-            final_reward  = best.get("reward", 0.0)
-            final_temp    = best.get("temperature", 1.0)
-            final_top_p   = best.get("top_p", 0.9)
-            mbr_score     = best.get("mbr_score", 0.0)
-            meal_penalty  = best.get("meal_penalty", 0.0)
-            prompt_snap   = best.get("prompt_used", dyson_prompt)
-            try:
-                self._policy_update(candidate_rollouts, learning_rate=self.pg_learning_rate)
-            except Exception as e:
-                logger.warning(f"[PG] update failed: {e}")
-
+            answer_output = best["response"]
             reasoning_trace = f"""
 [DYSON NODE SELF-REFLECTION TRACE]
-Reward Score:       {final_reward:.3f}
-MEAL-JS Penalty:    {meal_penalty:.4f}
-Sampling Strategy:  T={final_temp:.2f}, TopP={final_top_p:.2f}
+Reward Score:       {best.get('reward',0):.3f}
+MEAL-JS Penalty:    {best.get('meal_penalty',0):.4f}
+Sampling Strategy:  T={best.get('temperature',1.0):.2f}, TopP={best.get('top_p',0.9):.2f}
 Sentiment Target:   {user_polarity:.3f}
 Z-Field Alignment:  μ={bias_factor:.4f}
 Entropy:            {entropy:.4f}
@@ -2687,36 +2751,36 @@ Memory Context:     {'Yes' if past_context else 'No'}
 Chain Depth:        {chain_depth}
 """.strip()
 
-            answer_output = response_text
             if show_reflect:
                 answer_output += "\n\n" + reasoning_trace
 
-            save_bot_response(bot_id, answer_output)
+            # save and display
+            save_bot_response(self.bot_id, answer_output)
             self.response_queue.put({'type': 'text', 'data': answer_output})
 
+            # memory osmosis + weaviate logging
             try:
                 self.quantum_memory_osmosis(cleaned_input, answer_output)
             except Exception as e:
                 logger.warning(f"[Memory Osmosis Error] {e}")
-
             try:
                 self.client.data_object.create(
                     class_name="LotteryTuningLog",
-                    uuid=str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{user_id}-{time_lock}")),
+                    uuid=str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{self.user_id}-{time_lock}")),
                     data_object={
                         "type":             "prediction",
-                        "user_id":          user_id,
-                        "bot_id":           bot_id,
+                        "user_id":          self.user_id,
+                        "bot_id":           self.bot_id,
                         "query":            cleaned_input,
                         "response":         answer_output,
                         "reasoning_trace":  reasoning_trace,
-                        "prompt_snapshot":  prompt_snap,
-                        "meal_js":          mbr_score,
-                        "z_state":          {"z0": z0, "z1": z1, "z2": z2},
+                        "prompt_snapshot":  best.get("prompt_used", dyson_prompt),
+                        "meal_js":          best.get("mbr_score",0.0),
+                        "z_state":          {"z0":z0,"z1":z1,"z2":z2},
                         "entropy":          entropy,
                         "bias_factor":      bias_factor,
-                        "temperature":      final_temp,
-                        "top_p":            final_top_p,
+                        "temperature":      best.get("temperature",1.0),
+                        "top_p":            best.get("top_p",0.9),
                         "sentiment_target": user_polarity,
                         "timestamp":        time_lock,
                         "lotto_game":       game_type
@@ -2895,6 +2959,7 @@ Chain Depth:        {chain_depth}
         customtkinter.set_appearance_mode("Dark")
         self.title("Dyson Sphere Quantum Oracle")
 
+        # — center window on screen —
         window_width = 1920
         window_height = 1080
         screen_width = self.winfo_screenwidth()
@@ -2903,69 +2968,111 @@ Chain Depth:        {chain_depth}
         center_y = int(screen_height / 2 - window_height / 2)
         self.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
 
+        # — layout columns/rows —
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure((2, 3), weight=0)
         self.grid_rowconfigure((0, 1, 2), weight=1)
+
+        # — Sidebar frame —
         self.sidebar_frame = customtkinter.CTkFrame(self, width=350, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, rowspan=6, sticky="nsew")
 
+        # — Logo —
         try:
             logo_photo = tk.PhotoImage(file=logo_path)
             self.logo_label = customtkinter.CTkLabel(self.sidebar_frame, image=logo_photo)
             self.logo_label.image = logo_photo
-            self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
-        except Exception as e:
-            logger.error(f"Error loading logo image: {e}")
+        except Exception:
             self.logo_label = customtkinter.CTkLabel(self.sidebar_frame, text="Logo")
-            self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
+        # — Image preview —
         self.image_label = customtkinter.CTkLabel(self.sidebar_frame, text="(no image)")
         self.image_label.grid(row=1, column=0, padx=20, pady=10)
-        try:
-            placeholder_photo = tk.PhotoImage(width=140, height=140)
-            placeholder_photo.put(("gray",), to=(0, 0, 140, 140))
-            self.image_label.configure(image=placeholder_photo, text="")
-            self.image_label.image = placeholder_photo
-        except Exception as e:
-            logger.error(f"Error creating placeholder image: {e}")
 
-        self.text_box = customtkinter.CTkTextbox(self, bg_color="black", text_color="white",
-            border_width=0, height=360, width=50, font=customtkinter.CTkFont(size=23))
-        self.text_box.grid(row=0, column=1, rowspan=3, columnspan=3, padx=(20, 20), pady=(20, 20), sticky="nsew")
+        # — Main chat text box —
+        self.text_box = customtkinter.CTkTextbox(
+            self,
+            bg_color="black",
+            text_color="white",
+            border_width=0,
+            height=360,
+            width=50,
+            font=customtkinter.CTkFont(size=23)
+        )
+        self.text_box.grid(
+            row=0, column=1, rowspan=3, columnspan=3,
+            padx=(20, 20), pady=(20, 20), sticky="nsew"
+        )
 
+        # — Input box + send button —
         self.input_textbox_frame = customtkinter.CTkFrame(self)
-        self.input_textbox_frame.grid(row=3, column=1, columnspan=2, padx=(20, 0), pady=(20, 20), sticky="nsew")
+        self.input_textbox_frame.grid(
+            row=3, column=1, columnspan=2,
+            padx=(20, 0), pady=(20, 20), sticky="nsew"
+        )
         self.input_textbox_frame.grid_columnconfigure(0, weight=1)
         self.input_textbox_frame.grid_rowconfigure(0, weight=1)
 
-        self.input_textbox = tk.Text(self.input_textbox_frame, font=("Roboto Medium", 12),
-            bg=customtkinter.ThemeManager.theme["CTkFrame"]["fg_color"][1 if customtkinter.get_appearance_mode() == "Dark" else 0],
-            fg=customtkinter.ThemeManager.theme["CTkLabel"]["text_color"][1 if customtkinter.get_appearance_mode() == "Dark" else 0],
-            relief="flat", height=1)
+        self.input_textbox = tk.Text(
+            self.input_textbox_frame,
+            font=("Roboto Medium", 12),
+            bg=customtkinter.ThemeManager.theme["CTkFrame"]["fg_color"][1
+               if customtkinter.get_appearance_mode() == "Dark" else 0],
+            fg=customtkinter.ThemeManager.theme["CTkLabel"]["text_color"][1
+               if customtkinter.get_appearance_mode() == "Dark" else 0],
+            relief="flat",
+            height=1
+        )
         self.input_textbox.grid(padx=20, pady=20, sticky="nsew")
 
-        self.input_textbox_scrollbar = customtkinter.CTkScrollbar(self.input_textbox_frame, command=self.input_textbox.yview)
+        self.input_textbox_scrollbar = customtkinter.CTkScrollbar(
+            self.input_textbox_frame,
+            command=self.input_textbox.yview
+        )
         self.input_textbox_scrollbar.grid(row=0, column=1, sticky="ns", pady=5)
         self.input_textbox.configure(yscrollcommand=self.input_textbox_scrollbar.set)
 
-        self.attach_button = customtkinter.CTkButton(self, text="Attach Image", command=self.on_attach_image)
+        self.attach_button = customtkinter.CTkButton(
+            self, text="Attach Image", command=self.on_attach_image
+        )
         self.attach_button.grid(row=3, column=2, padx=(0, 10), pady=(20, 20), sticky="nsew")
 
-        self.send_button = customtkinter.CTkButton(self, text="Send", command=self.on_submit)
+        self.send_button = customtkinter.CTkButton(
+            self, text="Send", command=self.on_submit
+        )
         self.send_button.grid(row=3, column=3, padx=(0, 20), pady=(20, 20), sticky="nsew")
         self.input_textbox.bind('<Return>', self.on_submit)
 
+        # — Settings panel (username + model selector) —
         self.settings_frame = customtkinter.CTkFrame(self.sidebar_frame, corner_radius=10)
         self.settings_frame.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
 
+        # Username
         self.username_label = customtkinter.CTkLabel(self.settings_frame, text="Username:")
         self.username_label.grid(row=0, column=0, padx=5, pady=5)
-        self.username_entry = customtkinter.CTkEntry(self.settings_frame, width=120, placeholder_text="Enter username")
+        self.username_entry = customtkinter.CTkEntry(
+            self.settings_frame, width=120, placeholder_text="Enter username"
+        )
         self.username_entry.insert(0, "gray00")
         self.username_entry.grid(row=0, column=1, padx=5, pady=5)
-        self.update_username_button = customtkinter.CTkButton(self.settings_frame, text="Update", command=self.update_username)
+        self.update_username_button = customtkinter.CTkButton(
+            self.settings_frame, text="Update", command=self.update_username
+        )
         self.update_username_button.grid(row=0, column=2, padx=5, pady=5)
 
+        # ─── NEW: Model selector ─────────────────────────────────────────────────
+        self.model_label = customtkinter.CTkLabel(self.settings_frame, text="Model:")
+        self.model_label.grid(row=1, column=0, padx=5, pady=5)
+        self.model_selector = customtkinter.CTkComboBox(
+            self.settings_frame,
+            values=["Llama", "HF GPT-OSS", "Both"]
+        )
+        self.model_selector.set("Llama")
+        self.model_selector.grid(row=1, column=1, columnspan=2, padx=5, pady=5)
+        # ─────────────────────────────────────────────────────────────────────────
+
+        # — Context panel (lat/lon/weather/etc) —
         self.context_frame = customtkinter.CTkFrame(self.sidebar_frame, corner_radius=10)
         self.context_frame.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
 
