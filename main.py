@@ -40,7 +40,9 @@ import httpx
 import math
 from typing import List, Tuple
 from math import log2
-from transformers import pipeline
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+
 
 try:
     from pqcrypto.kem.kyber512 import generate_keypair, encapsulate, decapsulate
@@ -1084,13 +1086,44 @@ def get_current_multiversal_time():
     x, y, z, t = 34, 76, 12, 5633
     return f"X:{x}, Y:{y}, Z:{z}, T:{t}, Time:{current_time}"
 
+def load_hf_generator():
+    """
+    Load the openai/gpt-oss-20b model from local files only.
+    Expects the folder `/data/gpt-oss-20b` to contain:
+      - config.json
+      - tokenizer.json (or tokenizer files)
+      - *.safetensors shards
+    """
+    GPT_OSS_PATH = "/data/gpt-oss-20b"
 
-hf_generator = pipeline(
-    "text-generation",
-    model="openai/gpt-oss-70b",
-    torch_dtype="auto",
-    device_map="auto",
-)
+    # 1) tokenizer
+    hf_tokenizer = AutoTokenizer.from_pretrained(
+        GPT_OSS_PATH,
+        use_fast=True,
+        local_files_only=True,
+    )
+
+    # 2) model (half-precision, low CPU memory footprint)
+    hf_model = AutoModelForCausalLM.from_pretrained(
+        GPT_OSS_PATH,
+        torch_dtype=torch.float16,
+        device_map="auto",
+        local_files_only=True,
+        low_cpu_mem_usage=True,
+    )
+
+    # 3) text‐generation pipeline
+    return pipeline(
+        "text-generation",
+        model=hf_model,
+        tokenizer=hf_tokenizer,
+        device_map="auto",
+        trust_remote_code=False,
+    )
+
+# replace all other hf_generator = pipeline(...) with:
+hf_generator = load_hf_generator()
+
 
 def extract_rgb_from_text(text):
 
