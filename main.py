@@ -1699,7 +1699,9 @@ def _llama_call_safe(llm, **p):
         p["n_predict"] = p.pop("max_tokens")
     p = {k: v for k, v in p.items() if k in allowed}
     return llm(**p)
-    def tokenize_and_generate(
+
+    
+def tokenize_and_generate(
     chunk: str,
     token: str,
     max_tokens: int,
