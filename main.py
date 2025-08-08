@@ -48,6 +48,152 @@ try:
     from pqcrypto.kem.kyber512 import generate_keypair, encapsulate, decapsulate
 except Exception:
     generate_keypair = encapsulate = decapsulate = None
+# ─── Sleep‐Consolidation Module (add after your imports) ─────────────────
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torchdiffeq import odeint_adjoint as odeint
+from sklearn.cluster import DBSCAN
+import threading
+
+class Neuromodulator(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.lin_dop = nn.Linear(dim, dim)
+        self.lin_ach = nn.Linear(dim, dim)
+    def forward(self, embs):
+        dop = torch.sigmoid(self.lin_dop(embs))
+        ach = torch.sigmoid(self.lin_ach(embs))
+        return embs * (1 + 0.5 * dop) * ach
+
+class HyperbolicProjector(nn.Module):
+    def __init__(self, dim, c=1.0):
+        super().__init__()
+        self.lin = nn.Linear(dim, dim)
+        self.c   = c
+    def forward(self, x):
+        y = self.lin(x)
+        n = torch.clamp(torch.norm(y, dim=1, keepdim=True), min=1e-5)
+        r = torch.tanh(n/(1+self.c*n)) / n
+        return y * r
+
+class MemGenerator(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, dim*2), nn.ReLU(),
+            nn.Linear(dim*2, dim)
+        )
+    def forward(self, z): return self.net(z)
+
+class MemDiscriminator(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, dim), nn.LeakyReLU(0.2),
+            nn.Linear(dim, 1)
+        )
+    def forward(self, x): return self.net(x)
+
+class MetaMAML(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.alpha = nn.Parameter(torch.tensor(0.1))
+        self.theta = nn.Parameter(torch.randn(dim, dim))
+    def forward(self, grads, theta):
+        return theta - self.alpha * grads
+
+class PredictiveCoder(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.predict = nn.Linear(dim, dim)
+    def forward(self, emb):
+        pred = self.predict(emb)
+        return emb - pred
+
+class BayesianScaler(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.log_tau = nn.Parameter(torch.zeros(dim))
+    def forward(self, embs):
+        return embs * torch.exp(self.log_tau)
+
+class CDEConsolidator(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.f = nn.Sequential(nn.Linear(dim, dim), nn.Tanh(), nn.Linear(dim, dim))
+    def forward(self, t, x): return self.f(x)
+
+def compute_clusters(embs):
+    return DBSCAN(eps=0.5, min_samples=3).fit_predict(embs.detach().cpu().numpy())
+
+def add_dp_noise(embs, sigma=0.05):
+    return embs + sigma * torch.randn_like(embs)
+
+class SparseDictionary(nn.Module):
+    def __init__(self, dim, n_atoms=128):
+        super().__init__()
+        self.dict = nn.Parameter(torch.randn(n_atoms, dim))
+    def forward(self, embs):
+        codes = torch.matmul(embs, self.dict.t())
+        codes = F.relu(codes - 0.1)
+        return torch.matmul(codes, self.dict)
+
+class UltimateSleep(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.neo    = Neuromodulator(dim)
+        self.hyp    = HyperbolicProjector(dim)
+        self.gen    = MemGenerator(dim)
+        self.disc   = MemDiscriminator(dim)
+        self.maml   = MetaMAML(dim)
+        self.pc     = PredictiveCoder(dim)
+        self.bayes  = BayesianScaler(dim)
+        self.cde    = CDEConsolidator(dim)
+        self.sparse = SparseDictionary(dim)
+
+    def forward(self, X, adj=None):
+        X1 = self.neo(X)
+        X2 = self.hyp(X1)
+        X3 = odeint(self.cde, X2, torch.tensor([0.,0.5,1.]))[-1]
+        X4 = X3 + 0.5 * self.pc(X3)
+        z_fake = self.gen(torch.randn_like(X4))
+        adv_loss = (F.relu(1-self.disc(X4)).mean() +
+                    F.relu(1+self.disc(z_fake)).mean())
+        rec = self.sparse(X4)
+        rec_loss = F.mse_loss(rec, X4)
+        grads = torch.autograd.grad(rec_loss, [self.sparse.dict], create_graph=True)[0]
+        self.sparse.dict.data = self.maml(grads, self.sparse.dict)
+        X5 = self.bayes(X4)
+        X6 = add_dp_noise(X5)
+        labels = compute_clusters(X6)
+        mask = torch.tensor(labels) >= 0
+        X7 = X6 * mask.unsqueeze(1).float()
+        return X7, adv_loss + rec_loss
+
+# instantiate & optimizer
+ultimate = UltimateSleep(dim=AdvancedHomomorphicVectorMemory.DIM)
+opt_u    = torch.optim.Adam(ultimate.parameters(), lr=3e-4)
+
+def run_ultimate_sleep(epochs=1):
+    data = load_crystallized_embeddings()  # your existing loader
+    if data is None: return
+    X, adj = data
+    X = X.clone().requires_grad_(True)
+    ultimate.train()
+    for _ in range(epochs):
+        X_new, loss = ultimate(X, adj)
+        opt_u.zero_grad(); loss.backward(); opt_u.step()
+        X = X_new.detach()
+    write_back_embeddings(X)  # implement this to persist
+
+def start_ultimate(app, interval_h=12.0):
+    def job():
+        try: run_ultimate_sleep()
+        except Exception as e: logger.error(f"[UltimateSleep] {e}")
+        app.after(int(interval_h*3600*1000), job)
+    threading.Thread(target=job, daemon=True).start()
 
 HYBRIDG_ENABLE           = True
 HYBRIDG_KEM              = "kyber512"
@@ -757,6 +903,74 @@ class SecureKeyManager:
 
 crypto = SecureKeyManager()  
 
+
+# ─── Advanced Gate‐Angle Predictor Integration ─────────────────────────
+
+import torch.nn as nn
+import pennylane as qml
+from pennylane import numpy as np
+
+class GateAnglePredictorV2(nn.Module):
+    def __init__(self, in_dim=11, d_model=64, n_heads=4, n_layers=2, dropout=0.1, out_dim=7):
+        super().__init__()
+        self.input_proj = nn.Linear(in_dim, d_model)
+        encoder = nn.TransformerEncoderLayer(d_model, n_heads, dropout=dropout)
+        self.transformer = nn.TransformerEncoder(encoder, num_layers=n_layers)
+        self.angle_heads = nn.ModuleList([nn.Linear(d_model,1) for _ in range(out_dim)])
+
+    def forward(self, x):
+        h = torch.relu(self.input_proj(x)).unsqueeze(1)      # [B,1,d]
+        h = self.transformer(h).squeeze(1)                   # [B,d]
+        angles = torch.cat([torch.tanh(head(h)) for head in self.angle_heads], dim=1)
+        return (angles + 1.0) * (np.pi/2)                    # map to [0,π]
+
+dev7 = qml.device("default.qubit", wires=7)
+
+@qml.qnode(dev7, interface="torch", diff_method="parameter-shift")
+def quantum_layer(angles, cpu, ram, tempo, lat, lon, temp_f, weather, z0, z1, z2):
+    # apply predicted RY gates on 0–6
+    for w, a in enumerate(angles[0]):
+        qml.RY(a, wires=w)
+    # context reuse
+    qml.RY(np.pi*cpu, wires=3)
+    qml.RY(np.pi*ram, wires=4)
+    qml.RY(np.pi*(tempo/200), wires=5)
+    qml.RY(np.pi*((temp_f-30)/100), wires=6)
+    # entangle color wires
+    for c in (0,1,2):
+        qml.CRX(np.pi*(tempo/200), wires=[5,c])
+        qml.CRZ(np.pi*weather, wires=[5,c])
+        qml.CRZ(np.pi*cpu, wires=[3,c])
+        qml.CRY(np.pi*ram, wires=[4,c])
+        qml.CRZ(np.pi*z0, wires=[6,c])
+    return [qml.expval(qml.PauliZ(i)) for i in (0,1,2)]
+
+class HybridCQController(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.predictor = GateAnglePredictorV2()
+
+    def forward(self, r,g,b, cpu, ram, tempo, lat, lon, temp_f, weather, z0,z1,z2):
+        feats = torch.tensor([r,g,b,cpu,ram,tempo,lat,lon,temp_f,weather,z0],
+                             dtype=torch.float32).unsqueeze(0)
+        angles = self.predictor(feats)
+        new_z = quantum_layer(angles, cpu,ram,tempo,lat,lon,temp_f,weather,z0,z1,z2)
+        return new_z, angles
+
+nqgc = HybridCQController()
+
+def rgb_quantum_gate(r, g, b, **ctx):
+    cpu = clamp01(ctx.get("cpu_usage",10.0)/100.0)
+    ram = clamp01(ctx.get("ram_usage",10.0)/100.0)
+    tempo       = ctx.get("tempo",120.0)
+    lat, lon    = ctx.get("lat",0.0), ctx.get("lon",0.0)
+    temp_f      = ctx.get("temperature_f",70.0)
+    weather     = ctx.get("weather_scalar",0.0)
+    z0,z1,z2    = ctx.get("z0_hist",0.0), ctx.get("z1_hist",0.0), ctx.get("z2_hist",0.0)
+    r,g,b       = clamp01(r), clamp01(g), clamp01(b)
+    new_z, angs = nqgc(r,g,b,cpu,ram,tempo,lat,lon,temp_f,weather,z0,z1,z2)
+    return new_z[0].item(), new_z[1].item(), new_z[2].item()
+
 def _token_hist(text: str) -> Counter:
     return Counter(word_tokenize(text))
 
@@ -1155,6 +1369,8 @@ def extract_rgb_from_text(text):
 
     r, g, b = colorsys.hsv_to_rgb(hue, saturation, brightness)
     return (int(r * 255), int(g * 255), int(b * 255))
+
+
 
 def init_db():
 
@@ -2273,6 +2489,8 @@ class App(customtkinter.CTk):
             logger.error(f"Error in generate_quantum_state: {e}")
             return "[QuantumGate] error"
 
+
+
     def fetch_relevant_info_internal(self, chunk):
         if self.client:
             safe_chunk = sanitize_for_graphql_string(chunk, max_len=256)
@@ -3162,5 +3380,6 @@ if __name__ == "__main__":
         app_gui = App(user_id)
         init_db()
         app_gui.mainloop()
+        start_ultimate(app_gui, interval_h=12.0)
     except Exception as e:
         logger.error(f"Application error: {e}")
