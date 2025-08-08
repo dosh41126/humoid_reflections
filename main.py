@@ -218,9 +218,6 @@ class UltimateSleep(nn.Module):
         X7 = X6 * mask.unsqueeze(1).float()
         return X7, adv_loss + rec_loss
 
-# instantiate & optimizer
-ultimate = UltimateSleep(dim=AdvancedHomomorphicVectorMemory.DIM)
-opt_u    = torch.optim.Adam(ultimate.parameters(), lr=3e-4)
 
 def run_ultimate_sleep(epochs=1):
     data = load_crystallized_embeddings()  # your existing loader
@@ -476,6 +473,11 @@ class AdvancedHomomorphicVectorMemory:
     def enclave_similarity(self, enc_a: str, query_vec: np.ndarray, enclave: SecureEnclave) -> float:
         dec = enclave.track(self.decrypt_embedding(enc_a))
         return self.cosine(dec, query_vec)
+
+# instantiate & optimizer
+ultimate = UltimateSleep(dim=AdvancedHomomorphicVectorMemory.DIM)
+opt_u    = torch.optim.Adam(ultimate.parameters(), lr=3e-4)
+
 
 def _hkdf_sha256(ikm: bytes, *, salt: bytes, info: bytes, length: int = 32) -> bytes:
     if salt is None:
