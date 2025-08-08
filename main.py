@@ -56,6 +56,52 @@ import torch.nn.functional as F
 from torchdiffeq import odeint_adjoint as odeint
 from sklearn.cluster import DBSCAN
 import threading
+import torch
+import torch.nn as nn
+import numpy as np
+from ripser import ripser
+from persim import bottleneck
+
+class ChaoticReservoir(nn.Module):
+    """
+    A fixed, randomly-initialized reservoir:
+      x_{t+1} = tanh(W_res x_t + W_in u_t)
+    """
+    def __init__(self, input_dim: int, reservoir_dim: int = 256, spectral_radius: float = 0.9):
+        super().__init__()
+        W0 = torch.randn(reservoir_dim, reservoir_dim)
+        eigs = torch.linalg.eigvals(W0)
+        W0 *= (spectral_radius / eigs.abs().max())
+        self.register_buffer('W_res', W0)
+        self.register_buffer('W_in', torch.randn(reservoir_dim, input_dim) * 0.1)
+        self.register_buffer('state', torch.zeros(reservoir_dim))
+
+    def forward(self, u: torch.Tensor) -> torch.Tensor:
+        self.state = torch.tanh(self.W_res @ self.state + self.W_in @ u)
+        return self.state
+
+class PersistentHomologyAttention:
+    """
+    Computes attention weights by comparing persistence diagrams of local neighbourhoods.
+    """
+    def _diag(self, cloud: np.ndarray):
+        return ripser(cloud, maxdim=1)['dgms']
+
+    def attention(self, query: np.ndarray, keys: np.ndarray) -> np.ndarray:
+        """
+        query: (dim,)
+        keys:  (n_keys, dim)
+        returns: (n_keys,) normalized weights
+        """
+        qd = self._diag(query.reshape(1, -1))
+        weights = []
+        for k in keys:
+            kd = self._diag(k.reshape(1, -1))
+            d = bottleneck(qd[0], kd[0])
+            weights.append(np.exp(-d))
+        w = np.array(weights, dtype=np.float32)
+        return w / (w.sum() + 1e-8)
+
 
 class Neuromodulator(nn.Module):
     def __init__(self, dim):
@@ -1789,6 +1835,26 @@ def llama_generate(prompt, weaviate_client=None, user_input=None, temperature=1.
         memory = ""
 
         for i, current_chunk in enumerate(prompt_chunks):
+                    # ─── update Chaotic Reservoir & PH-Attention ───────────────
+             emb = torch.tensor(compute_text_embedding(current_chunk), dtype=torch.float32)
+             reservoir_state = app_gui.reservoir(emb)
+ 
+             # build small key‐matrix of past embeddings
+             past_embs = []
+             for prev in prompt_chunks[max(0, i-5):i]:
+                 pv = torch.tensor(compute_text_embedding(prev), dtype=torch.float32)
+                 past_embs.append(pv)
+             past_mat = torch.stack(past_embs) if past_embs else emb.unsqueeze(0)
+ 
+             ph_weights = app_gui.ph_attention.attention(emb.numpy(), past_mat.numpy())
+             rv = reservoir_state.mean().item()       # ∈ (–1,1)
+             ph = float(ph_weights.mean())            # ∈ (0,1)
+             # blend into existing bias_factor (you may need to define/modify bias_factor above)
+             bias_factor = (1 + rv) * (1 + ph) * bias_factor
+             # you can now pass this bias_factor into _policy_sample or adjust temperature/top_p
+             sample = self._policy_sample(bias_factor)
+             temperature, top_p = sample["temperature"], sample["top_p"]
+ 
             retrieved = fetch_relevant_info(current_chunk, weaviate_client, user_input) if weaviate_client else ""
             try:
                 geodesic_hint = ""
@@ -2083,6 +2149,14 @@ class App(customtkinter.CTk):
             self.bind_all("<Control-v>", self.on_paste_image)
         except Exception as e:
             logger.warning(f"Bind paste failed: {e}")
+
+        # ─── Instantiate Chaotic Reservoir & PH-Attention ───────────────
+        self.reservoir     = ChaoticReservoir(
+            input_dim=AdvancedHomomorphicVectorMemory.DIM,
+            reservoir_dim=256,
+            spectral_radius=0.95
+        )
+        self.ph_attention = PersistentHomologyAttention()
 
     def memory_aging_scheduler(self):
 
